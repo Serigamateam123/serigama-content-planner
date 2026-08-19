@@ -9,7 +9,7 @@ const NAV = [
   { id: 'analytics', label: 'Analytics', icon: 'analytics' },
 ];
 
-export function Sidebar({ route, onNavigate, onNew, config, session, isCloud, onSignOut }) {
+export function Sidebar({ route, onNavigate, onNew, config, session, isCloud, onSetPassword, onSignOut }) {
   const owner = config.ownerName || 'Serigama';
   const initial = owner.trim().charAt(0).toUpperCase() || 'S';
   return html`<aside class="sidebar">
@@ -40,7 +40,10 @@ export function Sidebar({ route, onNavigate, onNew, config, session, isCloud, on
         <div class="user-role">${isCloud ? session?.user?.email || config.ownerRole : config.ownerRole || 'Local demo'}</div>
       </div>
       ${isCloud
-        ? html`<button class="signout" onClick=${onSignOut} title="Sign out">Sign out</button>`
+        ? html`<div style=${{ display: 'flex', flexDirection: 'column', gap: '4px', marginLeft: 'auto' }}>
+            ${onSetPassword ? html`<button class="signout" onClick=${onSetPassword} title="Set a password">Set password</button>` : null}
+            <button class="signout" onClick=${onSignOut} title="Sign out">Sign out</button>
+          </div>`
         : null}
     </div>
   </aside>`;

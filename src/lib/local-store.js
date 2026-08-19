@@ -38,6 +38,12 @@ export const localStore = {
   async signIn() {
     return { ok: true, message: 'Local demo mode — no sign-in needed.' };
   },
+  async signInWithPassword() {
+    return { ok: true };
+  },
+  async setPassword() {
+    return { ok: true, message: 'Local demo mode — no password needed.' };
+  },
   async signOut() {
     return { ok: true };
   },

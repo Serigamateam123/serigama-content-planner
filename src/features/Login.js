@@ -1,9 +1,12 @@
 import { html } from '../lib/html.js';
 import { useState } from 'preact/hooks';
 
-// Magic-link sign in, shown only in cloud (Supabase) mode when not authenticated.
-export function Login({ config, onSignIn }) {
+// Sign in — password by default (no email, so no rate limit), with a magic-link
+// fallback. Shown only in cloud (Supabase) mode when not authenticated.
+export function Login({ config, onSignIn, onPasswordSignIn }) {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [mode, setMode] = useState('password'); // 'password' | 'link'
   const [msg, setMsg] = useState(null); // { ok, text }
   const [busy, setBusy] = useState(false);
 
@@ -12,15 +15,23 @@ export function Login({ config, onSignIn }) {
     const addr = email.trim();
     if (!addr) { setMsg({ ok: false, text: 'Enter your email address first.' }); return; }
     setBusy(true);
-    let res;
     try {
-      res = await onSignIn(addr);
+      if (mode === 'password') {
+        if (!password) { setBusy(false); setMsg({ ok: false, text: 'Enter your password.' }); return; }
+        const res = await onPasswordSignIn(addr, password);
+        // On success the app swaps to the dashboard automatically; only surface failures.
+        if (!res.ok) setMsg({ ok: false, text: res.message || 'Sign-in failed. Check your email and password.' });
+      } else {
+        const res = await onSignIn(addr);
+        setMsg({ ok: res.ok, text: res.message });
+      }
     } catch (err) {
-      res = { ok: false, message: (err && err.message) || 'Could not send the link. Check your connection and try again.' };
+      setMsg({ ok: false, text: (err && err.message) || 'Something went wrong — please try again.' });
     }
     setBusy(false);
-    setMsg({ ok: res.ok, text: res.message });
   };
+
+  const switchTo = (m) => { setMode(m); setMsg(null); };
 
   return html`<div class="login-wrap">
     <div class="login-card">
@@ -31,12 +42,22 @@ export function Login({ config, onSignIn }) {
           <label>Email</label>
           <input type="email" value=${email} onInput=${(e) => setEmail(e.target.value)} placeholder="you@example.com" autofocus />
         </div>
+        ${mode === 'password'
+          ? html`<div class="field">
+              <label>Password</label>
+              <input type="password" value=${password} onInput=${(e) => setPassword(e.target.value)} placeholder="Your password" />
+            </div>`
+          : null}
         <button class="btn btn-primary" style=${{ width: '100%', justifyContent: 'center' }} disabled=${busy}>
-          ${busy ? 'Sending…' : 'Email me a sign-in link'}
+          ${busy ? 'Please wait…' : mode === 'password' ? 'Sign in' : 'Email me a sign-in link'}
         </button>
       </form>
       ${msg ? html`<div class=${'toast' + (msg.ok ? '' : ' toast-err')}>${msg.text}</div>` : null}
-      <div class="login-note">We’ll email you a secure one-time link — no password to remember.</div>
+      <div class="login-note">
+        ${mode === 'password'
+          ? html`<span onClick=${() => switchTo('link')} style=${{ cursor: 'pointer', textDecoration: 'underline' }}>Email me a sign-in link instead</span>`
+          : html`<span onClick=${() => switchTo('password')} style=${{ cursor: 'pointer', textDecoration: 'underline' }}>Sign in with a password instead</span>`}
+      </div>
     </div>
   </div>`;
 }

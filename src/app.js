@@ -55,6 +55,7 @@ function App() {
   const [data, setData] = useState({ contents: [], campaigns: [], accounts: [], accountStats: [], metricsHistory: [], studioMetrics: [] });
   const [modal, setModal] = useState(null); // { content, defaultDate } | null
   const [loadingData, setLoadingData] = useState(false);
+  const [pwModal, setPwModal] = useState(false); // "set password" dialog
 
   // --- routing via hash ---
   useEffect(() => {
@@ -121,7 +122,9 @@ function App() {
   const openEdit = (content) => setModal({ content, defaultDate: null });
 
   if (!ready) return html`<div class="boot">Loading…</div>`;
-  if (isCloud && !session) return html`<${Login} config=${config} onSignIn=${(e) => store.signIn(e)} />`;
+  if (isCloud && !session) return html`<${Login} config=${config}
+    onSignIn=${(e) => store.signIn(e)}
+    onPasswordSignIn=${(e, p) => store.signInWithPassword(e, p)} />`;
 
   const { contents, campaigns, accounts, accountStats, metricsHistory } = data;
 
@@ -133,6 +136,7 @@ function App() {
       config=${config}
       session=${session}
       isCloud=${isCloud}
+      onSetPassword=${() => setPwModal(true)}
       onSignOut=${async () => { await store.signOut(); setSession(null); }}
     />
     <main class="main">
@@ -164,6 +168,47 @@ function App() {
           onClose=${() => setModal(null)}
         />`
       : null}
+
+    ${pwModal ? html`<${PasswordModal} onSave=${(pw) => store.setPassword(pw)} onClose=${() => setPwModal(false)} />` : null}
+  </div>`;
+}
+
+// Small dialog to set/change the account password (works because the user is
+// already signed in — no email is sent, so it never hits the email rate limit).
+function PasswordModal({ onSave, onClose }) {
+  const [pw, setPw] = useState('');
+  const [pw2, setPw2] = useState('');
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (pw.length < 6) { setMsg({ ok: false, text: 'Use at least 6 characters.' }); return; }
+    if (pw !== pw2) { setMsg({ ok: false, text: 'The two passwords do not match.' }); return; }
+    setBusy(true);
+    let res;
+    try { res = await onSave(pw); } catch (err) { res = { ok: false, message: (err && err.message) || 'Could not save.' }; }
+    setBusy(false);
+    setMsg({ ok: res.ok, text: res.message || (res.ok ? 'Password saved.' : 'Could not save.') });
+    if (res.ok) setTimeout(onClose, 1400);
+  };
+
+  return html`<div class="overlay" onClick=${onClose}>
+    <div class="modal" style=${{ maxWidth: '380px' }} onClick=${(e) => e.stopPropagation()}>
+      <div class="modal-head"><h3>Set a password</h3></div>
+      <form onSubmit=${save} style=${{ padding: '18px 22px' }}>
+        <p class="muted" style=${{ fontSize: '13px', marginTop: 0 }}>Set a password so you can sign in without waiting for an email link.</p>
+        <div class="field"><label>New password</label>
+          <input type="password" value=${pw} onInput=${(e) => setPw(e.target.value)} placeholder="At least 6 characters" autofocus /></div>
+        <div class="field"><label>Confirm password</label>
+          <input type="password" value=${pw2} onInput=${(e) => setPw2(e.target.value)} placeholder="Re-type it" /></div>
+        ${msg ? html`<div class=${'toast' + (msg.ok ? '' : ' toast-err')}>${msg.text}</div>` : null}
+        <div style=${{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '14px' }}>
+          <button type="button" class="btn" onClick=${onClose}>Cancel</button>
+          <button type="submit" class="btn btn-primary" disabled=${busy}>${busy ? 'Saving…' : 'Save password'}</button>
+        </div>
+      </form>
+    </div>
   </div>`;
 }
 

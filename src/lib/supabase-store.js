@@ -44,6 +44,19 @@ export function makeSupabaseStore(url, anonKey) {
       if (error) return { ok: false, message: error.message };
       return { ok: true, message: 'Check your email for the sign-in link.' };
     },
+    // Password sign-in — no email sent, so it never hits the email rate limit.
+    async signInWithPassword(email, password) {
+      const { data, error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) return { ok: false, message: error.message };
+      userId = data?.user?.id || null;
+      return { ok: true };
+    },
+    // Set/change the password for the currently signed-in user (no email needed).
+    async setPassword(password) {
+      const { error } = await sb.auth.updateUser({ password });
+      if (error) return { ok: false, message: error.message };
+      return { ok: true, message: 'Password saved — you can now sign in with email + password.' };
+    },
     async signOut() {
       await sb.auth.signOut();
       userId = null;
