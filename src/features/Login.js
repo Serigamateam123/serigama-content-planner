@@ -9,9 +9,15 @@ export function Login({ config, onSignIn }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    const addr = email.trim();
+    if (!addr) { setMsg({ ok: false, text: 'Enter your email address first.' }); return; }
     setBusy(true);
-    const res = await onSignIn(email.trim());
+    let res;
+    try {
+      res = await onSignIn(addr);
+    } catch (err) {
+      res = { ok: false, message: (err && err.message) || 'Could not send the link. Check your connection and try again.' };
+    }
     setBusy(false);
     setMsg({ ok: res.ok, text: res.message });
   };
