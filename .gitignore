@@ -1,0 +1,9 @@
+# Runtime / OS
+app.log
+.DS_Store
+**/.DS_Store
+__pycache__/
+*.pyc
+
+# Editor / local tooling
+.vscode/

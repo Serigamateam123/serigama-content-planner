@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Serigama Content Planner</title>
+  <link rel="stylesheet" href="./src/styles.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "preact": "https://esm.sh/preact@10.24.3",
+      "preact/hooks": "https://esm.sh/preact@10.24.3/hooks",
+      "htm": "https://esm.sh/htm@3.1.1",
+      "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.4"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <div class="boot">Loading…</div>
+  </div>
+  <script src="./config.js"></script>
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>

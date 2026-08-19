@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "planner",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8777", "--directory", "/Users/nrmalisa/Projects/serigama-content-planner"],
+      "port": 8777
+    }
+  ]
+}
