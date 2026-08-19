@@ -57,6 +57,26 @@ export function makeSupabaseStore(url, anonKey) {
       return () => data?.subscription?.unsubscribe();
     },
 
+    // --- key/value settings (app_kv) ---
+    // Small per-user store for manually-captured figures that used to live only in
+    // browser localStorage (monthly report, goal, audience, saves, …). Backing them
+    // with Supabase makes them show up on every device, not just the browser they
+    // were captured in. Values are stored as the raw localStorage string.
+    async getKV() {
+      const { data, error } = await sb.from('app_kv').select('k,v');
+      if (error) return {}; // table may not exist yet on older projects
+      const out = {};
+      for (const r of data || []) out[r.k] = r.v;
+      return out;
+    },
+    async setKV(k, v) {
+      const { error } = await sb
+        .from('app_kv')
+        .upsert({ user_id: requireUser(), k, v, updated_at: new Date().toISOString() }, { onConflict: 'user_id,k' });
+      if (error) throw error;
+      return { ok: true };
+    },
+
     // --- reads ---
     async listAccounts() {
       const { data, error } = await sb.from('accounts').select('*').order('display_name');

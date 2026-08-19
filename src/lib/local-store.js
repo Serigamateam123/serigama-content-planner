@@ -45,6 +45,14 @@ export const localStore = {
     return () => {};
   },
 
+  // --- key/value settings (no-op in demo mode: localStorage already IS the store) ---
+  async getKV() {
+    return {};
+  },
+  async setKV() {
+    return { ok: true };
+  },
+
   // --- reads ---
   async listAccounts() {
     return ok(ensure().accounts);

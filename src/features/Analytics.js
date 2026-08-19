@@ -4,6 +4,7 @@ import { Kpi, Icon, Empty } from '../components/ui.js';
 import { TrendChart } from './TrendChart.js';
 import { TikTokConnect } from './TikTokConnect.js';
 import { analytics, compact, withThousands, erOf, engagementOf, periodMetrics, periodTrend, daysOfHistory, applyFilters, engagementExtras } from '../lib/metrics.js';
+import { store } from '../lib/store.js';
 
 // Unicode-block sparkline from a list of numbers (shared by monthly + engagement).
 function sparkline(vals) {
@@ -435,6 +436,7 @@ function GoalCard({ contents }) {
   const save = () => {
     const v = Math.max(0, Math.round(Number(draft) || 0));
     localStorage.setItem(KEY, String(v));
+    if (store.setKV) store.setKV(KEY, String(v)).catch(() => {}); // sync to cloud so other devices see it
     setGoal(v);
     setEditing(false);
   };

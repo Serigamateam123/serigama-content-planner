@@ -12,6 +12,37 @@ import { ContentModal } from './features/ContentModal.js';
 import { Login } from './features/Login.js';
 
 const ROUTES = ['dashboard', 'calendar', 'campaigns', 'overview', 'analytics'];
+
+// Manually-captured figures that used to live only in this browser's localStorage.
+// They are now mirrored to Supabase (table app_kv) so they appear on every device.
+const KV_KEYS = [
+  'serigama.monthly',
+  'serigama.goal.views',
+  'serigama.audience',
+  'serigama.monthlyfollowers',
+  'serigama.saves',
+  'serigama.newfollowers',
+];
+
+// Two-way reconcile between localStorage and Supabase for the KV_KEYS:
+//  - a key present locally is pushed up (local is the freshest capture);
+//  - a key missing locally but present in Supabase is hydrated down.
+// So the browser that captured the data seeds the cloud, and every other device
+// (e.g. the live site) pulls it back. Runs before the analytics views read
+// localStorage, so the values are in place for the render that follows.
+async function syncKV() {
+  if (!isCloud || !store.getKV) return;
+  let remote = {};
+  try { remote = await store.getKV(); } catch (e) { return; }
+  for (const k of KV_KEYS) {
+    const local = localStorage.getItem(k);
+    if (local != null) {
+      if (remote[k] !== local) { try { await store.setKV(k, local); } catch (e) { /* keep going */ } }
+    } else if (remote[k] != null) {
+      localStorage.setItem(k, remote[k]);
+    }
+  }
+}
 const routeFromHash = () => {
   const r = (location.hash || '').replace(/^#\/?/, '').split('?')[0];
   return ROUTES.includes(r) ? r : 'dashboard';
@@ -47,6 +78,7 @@ function App() {
 
   const loadData = useCallback(async () => {
     setLoadingData(true);
+    await syncKV(); // hydrate localStorage-backed figures from Supabase before reading them
     const [contents, campaigns, accounts, accountStats, metricsHistory, studioMetrics] = await Promise.all([
       store.listContents(),
       store.listCampaigns(),
