@@ -41,7 +41,7 @@ const RANGE_PRESETS = [
 ];
 
 export function Analytics({ contents, campaigns, accounts, accountStats, metricsHistory, onSaveMetrics }) {
-  const DEFAULTS = { campaign_id: 'all', account_id: 'all', platform: 'all', hashtag: '', from: '', to: '', grain: 'monthly', preset: 'all' };
+  const DEFAULTS = { campaign_id: 'all', account_id: 'all', platform: 'all', hashtag: '', from: dayKey(startOfMonth(new Date())), to: dayKey(new Date()), grain: 'monthly', preset: 'month' };
   // `f` = the filters currently APPLIED to the results. `draft` = what the user is
   // editing in the filter bar. Nothing filters until they press Search (setF(draft)).
   const [f, setF] = useState(DEFAULTS);

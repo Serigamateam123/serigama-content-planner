@@ -19,6 +19,14 @@ if (typeof window !== 'undefined') {
   window.serigamaCloud = {
     get: () => store.getKV(),
     set: async (k, v) => { localStorage.setItem(k, v); try { await store.setKV(k, v); return 'ok'; } catch (e) { return 'err: ' + (e.message || e.code || e); } },
+    saveStudio: async (rows) => {
+      if (!store.client) return 'no-client';
+      const { data: { user } } = await store.client.auth.getUser();
+      const ids = rows.map((r) => r.external_id);
+      await store.client.from('studio_metrics').delete().eq('user_id', user.id).in('external_id', ids);
+      const { error } = await store.client.from('studio_metrics').insert(rows.map((r) => ({ ...r, user_id: user.id })));
+      return error ? 'err: ' + error.message : 'ok';
+    },
   };
 }
 

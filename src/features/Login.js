@@ -35,7 +35,7 @@ export function Login({ config, onSignIn, onPasswordSignIn }) {
 
   return html`<div class="login-wrap">
     <div class="login-card">
-      <h1>${config.brandName || 'Serigama'} Content Planner</h1>
+      <h1>${config.brandName || 'Serigama'} Content Planner & Reporting</h1>
       <p>Sign in to reach your content plan from any device.</p>
       <form onSubmit=${submit}>
         <div class="field">

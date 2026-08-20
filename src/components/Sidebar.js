@@ -15,7 +15,7 @@ export function Sidebar({ route, onNavigate, onNew, config, session, isCloud, on
   return html`<aside class="sidebar">
     <div class="brand">
       <div class="brand-name">${config.brandName || 'Serigama'}</div>
-      <div class="brand-sub">Content Planner</div>
+      <div class="brand-sub">Content Planner & Reporting</div>
     </div>
 
     <button class="btn-new" onClick=${onNew}>

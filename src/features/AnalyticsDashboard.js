@@ -29,9 +29,10 @@ function rangeFor(key, now) {
 // (preset or custom dates); audience + best-month highlights come from Studio captures.
 export function AnalyticsDashboard({ contents, campaigns, accounts, accountStats, onNavigate, onRefresh }) {
   const now = new Date();
-  const [rangeKey, setRangeKey] = useState('all');
-  const [cFrom, setCFrom] = useState('');
-  const [cTo, setCTo] = useState('');
+  const monthDefault = rangeFor('month', now);
+  const [rangeKey, setRangeKey] = useState('month');
+  const [cFrom, setCFrom] = useState(monthDefault.from);
+  const [cTo, setCTo] = useState(monthDefault.to);
 
   const r = rangeKey === 'custom'
     ? { from: cFrom || '', to: cTo || dayKey(now), label: cFrom && cTo ? `${shortDate(cFrom)} – ${shortDate(cTo)}` : (cFrom ? `since ${shortDate(cFrom)}` : 'Custom range') }

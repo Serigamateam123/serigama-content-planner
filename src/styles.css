@@ -50,7 +50,7 @@ button { font-family: inherit; }
 
 /* --- Sidebar ------------------------------------------------------------ */
 .sidebar {
-  width: 244px;
+  width: 288px;
   flex-shrink: 0;
   background: linear-gradient(180deg, var(--blue-1), var(--blue-2));
   color: #fff;
