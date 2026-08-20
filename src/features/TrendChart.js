@@ -66,8 +66,8 @@ export function TrendChart({ data, grain }) {
     const d = data[hover];
     const l1 = fullLabel(d.key);
     const l2 = `${withThousands(d.value)} views`;
-    const boxW = Math.max(l1.length, l2.length) * 6.6 + 20;
-    const boxH = 40;
+    const boxW = Math.max(l1.length, l2.length) * 5.6 + 16;
+    const boxH = 34;
     let bx = x(hover) - boxW / 2;
     bx = Math.max(padL, Math.min(W - padR - boxW, bx));
     let by = y(d.value) - boxH - 12;
@@ -103,9 +103,9 @@ export function TrendChart({ data, grain }) {
       ${tip ? html`<g>
         <line x1=${tip.px} y1=${padT} x2=${tip.px} y2=${padT + innerH} stroke="#c7ccf7" stroke-width="1" stroke-dasharray="3 3" />
         <circle cx=${tip.px} cy=${tip.py} r="5" fill="#4b57f5" stroke="#fff" stroke-width="2" />
-        <rect x=${tip.bx} y=${tip.by} width=${tip.boxW} height=${tip.boxH} rx="7" fill="#1f2430" opacity="0.96" />
-        <text x=${tip.bx + tip.boxW / 2} y=${tip.by + 16} text-anchor="middle" font-size="11.5" fill="#c7ccf7">${tip.l1}</text>
-        <text x=${tip.bx + tip.boxW / 2} y=${tip.by + 31} text-anchor="middle" font-size="12.5" font-weight="700" fill="#fff">${tip.l2}</text>
+        <rect x=${tip.bx} y=${tip.by} width=${tip.boxW} height=${tip.boxH} rx="6" fill="#1f2430" opacity="0.96" />
+        <text x=${tip.bx + tip.boxW / 2} y=${tip.by + 13} text-anchor="middle" font-size="9.5" fill="#c7ccf7">${tip.l1}</text>
+        <text x=${tip.bx + tip.boxW / 2} y=${tip.by + 26} text-anchor="middle" font-size="10.5" font-weight="700" fill="#fff">${tip.l2}</text>
       </g>` : null}
 
       ${data.map((d, i) => html`<rect
