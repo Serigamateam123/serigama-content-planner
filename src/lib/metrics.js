@@ -446,7 +446,8 @@ export function periodTrend(history, grain) {
       if (k) buckets.set(k, (buckets.get(k) || 0) + gain);
     }
   }
-  return [...buckets.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => ({ key: k, value: v }));
+  const entries = fillGaps([...buckets.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)), grain);
+  return entries.map(([k, v]) => ({ key: k, value: v }));
 }
 
 // --- Analytics -------------------------------------------------------------
@@ -533,25 +534,28 @@ export function trend(published, grain) {
     if (!k) continue;
     buckets.set(k, (buckets.get(k) || 0) + (Number(c.metrics.views) || 0));
   }
-  let entries = [...buckets.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
-  // Daily/weekly: fill in the gaps so the x-axis is an even day-by-day (or
-  // week-by-week) timeline instead of jumping between post dates. Days with no
-  // post show 0. Capped so an all-time daily view can't explode the point count.
-  if ((grain === 'daily' || grain === 'weekly') && entries.length > 1) {
-    const step = grain === 'weekly' ? 7 : 1;
-    const first = parse(entries[0][0]);
-    const last = parse(entries[entries.length - 1][0]);
-    const spanDays = Math.round((last - first) / 86400000);
-    if (spanDays / step <= 400) {
-      const map = new Map(entries);
-      entries = [];
-      for (let d = new Date(first); d <= last; d = addDays(d, step)) {
-        const k = dayKey(d);
-        entries.push([k, map.get(k) || 0]);
-      }
-    }
-  }
+  const entries = fillGaps([...buckets.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)), grain);
   return entries.map(([k, v]) => ({ key: k, value: v }));
+}
+
+// Daily/weekly: fill in the gaps so the x-axis is an even day-by-day (or
+// week-by-week) timeline instead of jumping between dates. Empty buckets show 0.
+// Capped so an all-time daily view can't explode the point count.
+function fillGaps(entries, grain) {
+  if ((grain !== 'daily' && grain !== 'weekly') || entries.length < 2) return entries;
+  const step = grain === 'weekly' ? 7 : 1;
+  const first = parse(entries[0][0]);
+  const last = parse(entries[entries.length - 1][0]);
+  if (!first || !last) return entries;
+  const spanSteps = Math.round((last - first) / 86400000) / step;
+  if (spanSteps > 400) return entries;
+  const map = new Map(entries);
+  const out = [];
+  for (let d = new Date(first); d <= last; d = addDays(d, step)) {
+    const k = dayKey(d);
+    out.push([k, map.get(k) || 0]);
+  }
+  return out;
 }
 
 // Compact number formatting: 1912700 -> "1.9M", 171160 -> "171.2K".

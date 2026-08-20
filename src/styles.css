@@ -275,6 +275,9 @@ button { font-family: inherit; }
 
 /* --- Trend chart -------------------------------------------------------- */
 .chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.chart-head-stack { align-items: flex-start; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.chart-sub { font-size: 12px; color: var(--muted); margin-top: 3px; max-width: 360px; line-height: 1.45; }
+.chart-controls { display: flex; gap: 8px; flex-wrap: wrap; }
 .chart-wrap { width: 100%; overflow-x: auto; }
 .trend-foot { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-2); }
 .trend-foot .k { font-size: 11px; color: var(--muted-2); text-transform: uppercase; letter-spacing: .6px; }

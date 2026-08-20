@@ -52,6 +52,9 @@ export function Analytics({ contents, campaigns, accounts, accountStats, metrics
   const histDays = daysOfHistory(history);
   const [measurePref, setMeasurePref] = useState(null);
   const measure = 'lifetime';
+  // Views-trend chart mode: 'overall' = views the account got each day (Studio
+  // style, from snapshots) · 'post' = views grouped by each post's publish date.
+  const [trendView, setTrendView] = useState(null);
 
   const dset = (k) => (e) => setDraft((s) => ({ ...s, [k]: e.target.value }));
   const dsetDate = (k) => (e) => setDraft((s) => ({ ...s, [k]: e.target.value, preset: 'custom' }));
@@ -90,7 +93,11 @@ export function Analytics({ contents, campaigns, accounts, accountStats, metrics
   const kEng = rangeMode ? pm.engagement : a.totalEngagement;
   const kER = rangeMode ? pm.er : a.avgER;
   const kPosts = rangeMode ? pm.postsWithData : a.publishedCount;
-  const chartData = rangeMode ? pTrend : a.trend;
+  // Overall (Studio-style) daily views need snapshot history; fall back to the
+  // by-post-date view when there's none yet. User's explicit pick wins.
+  const canOverall = pTrend.length > 0;
+  const usingOverall = (trendView || (canOverall ? 'overall' : 'post')) === 'overall';
+  const chartData = usingOverall ? pTrend : a.trend;
 
   // Trend footer stats (follow whichever series is charted)
   const values = chartData.map((t) => t.value);
@@ -203,21 +210,35 @@ export function Analytics({ contents, campaigns, accounts, accountStats, metrics
       <${MonthlyReport} contents=${contents} followers=${a.followerGrowth ? a.followerGrowth.current : 0} />
 
       <div class="card card-pad section-gap">
-        <div class="chart-head">
-          <div class="card-title">${rangeMode ? 'Views over time (like Studio)' : 'Views trend (by post date)'}</div>
-          <div class="seg">
-            ${['daily', 'weekly', 'monthly'].map(
-              (g) => html`<button class=${f.grain === g ? 'active' : ''} onClick=${() => setF((s) => ({ ...s, grain: g }))}>${g[0].toUpperCase() + g.slice(1)}</button>`
-            )}
+        <div class="chart-head chart-head-stack">
+          <div>
+            <div class="card-title">Views trend</div>
+            <div class="chart-sub">${usingOverall
+              ? 'How many views your account got each day — like TikTok Studio.'
+              : 'Views grouped by the day each post was published.'}</div>
+          </div>
+          <div class="chart-controls">
+            <div class="seg">
+              <button class=${usingOverall ? 'active' : ''} onClick=${() => setTrendView('overall')}>Views over time</button>
+              <button class=${!usingOverall ? 'active' : ''} onClick=${() => setTrendView('post')}>By post date</button>
+            </div>
+            <div class="seg">
+              ${['daily', 'weekly', 'monthly'].map(
+                (g) => html`<button class=${f.grain === g ? 'active' : ''} onClick=${() => setF((s) => ({ ...s, grain: g }))}>${g[0].toUpperCase() + g.slice(1)}</button>`
+              )}
+            </div>
           </div>
         </div>
-        <${TrendChart} data=${chartData} grain=${f.grain} />
-        <div class="trend-foot">
-          <div><div class="k">${rangeMode ? 'Views charted' : 'Total views'}</div><div class="v">${withThousands(rangeMode ? chartedTotal : a.totalViews)}</div></div>
-          <div><div class="k">Avg. per period</div><div class="v">${compact(avgPer)}</div></div>
-          <div><div class="k">Best period</div><div class="v">${compact(best)}</div></div>
-          <div><div class="k">Best platform</div><div class="v">${a.bestPlatform ? PLATFORM_LABEL[a.bestPlatform] : '—'}</div></div>
-        </div>
+        ${usingOverall && chartData.length === 0
+          ? html`<div class="empty" style=${{ padding: '48px 24px' }}>Daily-views tracking just began (~Aug 2026) and fills in a little more each day. Check back soon — or use <strong>By post date</strong> to see your full history.</div>`
+          : html`
+            <${TrendChart} data=${chartData} grain=${f.grain} />
+            <div class="trend-foot">
+              <div><div class="k">${usingOverall ? 'Views in this view' : 'Total views'}</div><div class="v">${withThousands(chartedTotal)}</div></div>
+              <div><div class="k">Avg. per ${f.grain === 'monthly' ? 'month' : f.grain === 'weekly' ? 'week' : 'day'}</div><div class="v">${compact(avgPer)}</div></div>
+              <div><div class="k">Best ${f.grain === 'monthly' ? 'month' : f.grain === 'weekly' ? 'week' : 'day'}</div><div class="v">${compact(best)}</div></div>
+              <div><div class="k">Best platform</div><div class="v">${a.bestPlatform ? PLATFORM_LABEL[a.bestPlatform] : '—'}</div></div>
+            </div>`}
       </div>
 
       <${HashtagCard} rows=${a.hashtags} active=${f.hashtag} onPick=${pickHashtag} />
