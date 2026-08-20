@@ -160,7 +160,7 @@ export function AnalyticsDashboard({ contents, campaigns, accounts, accountStats
         <div class="section-gap" style=${{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
           ${stat('👁', 'Total views', compact(a.totalViews), rangeKey === 'all' ? 'lifetime, all videos' : 'from posts in this range', deltaChip(a.totalViews, cmp && cmp.views))}
           ${stat('💬', 'Engagement', compact(a.totalEngagement), `${a.avgER}% avg. rate${erWord ? ' — ' + erWord : ''}`, deltaChip(a.totalEngagement, cmp && cmp.eng))}
-          ${stat('👥', 'Followers', withThousands(followers), follInRange != null ? `+${withThousands(follInRange)} gained (${r.label.toLowerCase()})` : 'current total', follDeltaPct != null ? html`<span style=${{ color: '#0f7a4d', fontWeight: 600, fontSize: '11.5px' }}>▲ ${follDeltaPct}% <span class="muted" style=${{ fontWeight: 400 }}>vs prev</span></span>` : '')}
+          ${stat('👥', 'Followers', withThousands(followers), follInRange != null ? `+${withThousands(follInRange)} gained (${r.label.toLowerCase()})` : 'current total', follDeltaPct != null ? html`<span style=${{ color: follDeltaPct >= 0 ? '#0f7a4d' : '#b4232a', fontWeight: 600, fontSize: '11.5px' }}>${follDeltaPct >= 0 ? '▲' : '▼'} ${Math.abs(follDeltaPct)}% <span class="muted" style=${{ fontWeight: 400 }}>vs prev</span></span>` : '')}
           ${stat('🎬', 'Posts published', withThousands(a.publishedCount), `~${perWeek} / week · ${compact(avgPer)} avg views`, deltaChip(a.publishedCount, cmp && cmp.posts, true))}
         </div>
 

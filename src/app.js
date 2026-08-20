@@ -13,6 +13,15 @@ import { Login } from './features/Login.js';
 
 const ROUTES = ['dashboard', 'calendar', 'campaigns', 'overview', 'analytics'];
 
+// Helper so a capture can be written straight to the cloud (and mirrored locally).
+// Used when refreshing the manually-pulled Studio figures.
+if (typeof window !== 'undefined') {
+  window.serigamaCloud = {
+    get: () => store.getKV(),
+    set: async (k, v) => { localStorage.setItem(k, v); try { await store.setKV(k, v); return 'ok'; } catch (e) { return 'err: ' + (e.message || e.code || e); } },
+  };
+}
+
 // Manually-captured figures that used to live only in this browser's localStorage.
 // They are now mirrored to Supabase (table app_kv) so they appear on every device.
 const KV_KEYS = [
@@ -24,22 +33,23 @@ const KV_KEYS = [
   'serigama.newfollowers',
 ];
 
-// Two-way reconcile between localStorage and Supabase for the KV_KEYS:
-//  - a key present locally is pushed up (local is the freshest capture);
-//  - a key missing locally but present in Supabase is hydrated down.
-// So the browser that captured the data seeds the cloud, and every other device
-// (e.g. the live site) pulls it back. Runs before the analytics views read
-// localStorage, so the values are in place for the render that follows.
+// Supabase (app_kv) is the SOURCE OF TRUTH for these manually-captured figures.
+// On every load we mirror the cloud value DOWN into localStorage, so every device
+// shows the same latest data — and a device holding a stale copy can no longer
+// push it up and clobber the cloud. A key the cloud doesn't have yet is seeded
+// once from whichever browser first captured it. Writes (a capture, or the goal)
+// go to the cloud via setKV, so the cloud always holds the freshest value.
+// Runs before the analytics views read localStorage, so values are in place.
 async function syncKV() {
   if (!isCloud || !store.getKV) return;
   let remote = {};
   try { remote = await store.getKV(); } catch (e) { return; }
   for (const k of KV_KEYS) {
-    const local = localStorage.getItem(k);
-    if (local != null) {
-      if (remote[k] !== local) { try { await store.setKV(k, local); } catch (e) { /* keep going */ } }
-    } else if (remote[k] != null) {
-      localStorage.setItem(k, remote[k]);
+    if (remote[k] != null) {
+      if (localStorage.getItem(k) !== remote[k]) localStorage.setItem(k, remote[k]);
+    } else {
+      const local = localStorage.getItem(k);
+      if (local != null) { try { await store.setKV(k, local); } catch (e) { /* keep going */ } }
     }
   }
 }

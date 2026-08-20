@@ -323,7 +323,7 @@ function FollowerCard({ fg, gains, posts, onClose }) {
 
   // Followers gained per video — prefer Studio's real new_followers (from the
   // studio_metrics table or the captured localStorage map), fall back to the estimate.
-  const studioFollows = (c) => (c.studio && c.studio.new_followers != null ? c.studio.new_followers : (c.newFollowers != null ? c.newFollowers : null));
+  const studioFollows = (c) => (c.newFollowers != null ? c.newFollowers : (c.studio && c.studio.new_followers != null ? c.studio.new_followers : null));
   let perPost = (posts || [])
     .map((c) => ({ c, g: studioFollows(c), studio: true }))
     .filter((r) => r.g != null && r.g > 0);
@@ -341,11 +341,11 @@ function FollowerCard({ fg, gains, posts, onClose }) {
         <span class="muted" style=${{ fontSize: '12px' }}>average, based on Studio net followers</span>
       </div>
       <div style=${{ display: 'flex', gap: '20px', marginTop: '8px', flexWrap: 'wrap', fontSize: '13px' }}>
-        <div>Last 7 days <strong style=${{ color: '#0f7a4d' }}>+${aud.net7d}</strong> <span style=${{ color: '#0f7a4d', fontSize: '11.5px' }}>▲${aud.net7dChangePct}% vs prior week</span></div>
-        <div>Last 28 days <strong style=${{ color: '#0f7a4d' }}>+${aud.net28d}</strong> <span style=${{ color: '#0f7a4d', fontSize: '11.5px' }}>▲${aud.net28dChangePct}% vs prior 4 wks</span></div>
+        <div>Last 7 days <strong style=${{ color: '#0f7a4d' }}>+${aud.net7d}</strong> <span style=${{ color: aud.net7dChangePct >= 0 ? '#0f7a4d' : '#b4232a', fontSize: '11.5px' }}>${aud.net7dChangePct >= 0 ? '▲' : '▼'}${Math.abs(aud.net7dChangePct)}% vs prior week</span></div>
+        <div>Last 28 days <strong style=${{ color: '#0f7a4d' }}>+${aud.net28d}</strong> <span style=${{ color: aud.net28dChangePct >= 0 ? '#0f7a4d' : '#b4232a', fontSize: '11.5px' }}>${aud.net28dChangePct >= 0 ? '▲' : '▼'}${Math.abs(aud.net28dChangePct)}% vs prior 4 wks</span></div>
       </div>
       ${daysTo != null ? html`<div style=${{ fontSize: '12.5px', marginTop: '8px' }}>🎯 At this pace you'll hit <strong>${withThousands(milestone)}</strong> in about <strong>${daysTo} days</strong> (~${etaLabel}).</div>` : ''}
-      <div class="muted" style=${{ fontSize: '11px', marginTop: '6px' }}>Captured from Studio on ${aud.capturedAt}. Growth is <strong style=${{ color: '#0f7a4d' }}>accelerating</strong> — both windows are up vs the period before.</div>
+      <div class="muted" style=${{ fontSize: '11px', marginTop: '6px' }}>Captured from Studio on ${aud.capturedAt}. ${aud.net7dChangePct >= 0 && aud.net28dChangePct >= 0 ? html`Growth is <strong style=${{ color: '#0f7a4d' }}>accelerating</strong> — both windows up vs the period before.` : aud.net7dChangePct < 0 && aud.net28dChangePct < 0 ? html`Growth <strong style=${{ color: '#b4232a' }}>cooled</strong> — both windows down vs the period before.` : html`Growth is <strong>mixed</strong> vs the period before — see the two windows above.`}</div>
     </div>` : (fg && fg.days >= 2 ? html`<div style=${{ marginTop: '10px' }}><${TrendChart} data=${fg.points} grain="daily" /></div>` : html`<p class="muted" style=${{ fontSize: '12.5px', marginTop: '8px' }}>Ask me to pull your follower audience from Studio to see daily growth pace and demographics.</p>`)}
 
     ${perPost.length ? html`<div style=${{ marginTop: '16px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>

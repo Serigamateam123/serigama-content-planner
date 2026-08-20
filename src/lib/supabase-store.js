@@ -134,12 +134,24 @@ export function makeSupabaseStore(url, anonKey) {
       return all;
     },
     async listContents() {
-      const [{ data: contents, error: e1 }, { data: metricRows, error: e2 }] = await Promise.all([
-        sb.from('contents').select('*'),
-        sb.from('content_metrics').select('*'),
-      ]);
+      const { data: contents, error: e1 } = await sb.from('contents').select('*');
       if (e1) throw e1;
-      if (e2) throw e2;
+      // content_metrics grows ~1 row per video per day and blows past PostgREST's
+      // 1000-row cap, so a plain select('*') silently drops the NEWEST rows — recent
+      // days and brand-new videos — leaving those videos with stale or no metrics.
+      // Paginate (newest first) so every video's latest snapshot is included.
+      const page = 1000;
+      let metricRows = [];
+      for (let from = 0; ; from += page) {
+        const { data, error } = await sb
+          .from('content_metrics')
+          .select('*')
+          .order('fetched_at', { ascending: false })
+          .range(from, from + page - 1);
+        if (error) break;
+        metricRows = metricRows.concat(data || []);
+        if (!data || data.length < page) break;
+      }
       return attachMetrics(contents, metricRows);
     },
 
