@@ -533,9 +533,25 @@ export function trend(published, grain) {
     if (!k) continue;
     buckets.set(k, (buckets.get(k) || 0) + (Number(c.metrics.views) || 0));
   }
-  return [...buckets.entries()]
-    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-    .map(([k, v]) => ({ key: k, value: v }));
+  let entries = [...buckets.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  // Daily/weekly: fill in the gaps so the x-axis is an even day-by-day (or
+  // week-by-week) timeline instead of jumping between post dates. Days with no
+  // post show 0. Capped so an all-time daily view can't explode the point count.
+  if ((grain === 'daily' || grain === 'weekly') && entries.length > 1) {
+    const step = grain === 'weekly' ? 7 : 1;
+    const first = parse(entries[0][0]);
+    const last = parse(entries[entries.length - 1][0]);
+    const spanDays = Math.round((last - first) / 86400000);
+    if (spanDays / step <= 400) {
+      const map = new Map(entries);
+      entries = [];
+      for (let d = new Date(first); d <= last; d = addDays(d, step)) {
+        const k = dayKey(d);
+        entries.push([k, map.get(k) || 0]);
+      }
+    }
+  }
+  return entries.map(([k, v]) => ({ key: k, value: v }));
 }
 
 // Compact number formatting: 1912700 -> "1.9M", 171160 -> "171.2K".
