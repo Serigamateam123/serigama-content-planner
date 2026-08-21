@@ -973,7 +973,7 @@ function KpiDetail({ kind, a, rangeMode, onClose }) {
             if (key === 'engagement') return eng(c);
             if (key === 'hook') return c.studio && c.studio.hook_3s_pct != null ? c.studio.hook_3s_pct : -1;
             if (key === 'newv') return c.studio && c.studio.new_viewers_pct != null ? c.studio.new_viewers_pct : -1;
-            if (key === 'foll') return c.studio && c.studio.new_followers != null ? c.studio.new_followers : -1;
+            if (key === 'foll') { const f = c.newFollowers != null ? c.newFollowers : (c.studio && c.studio.new_followers != null ? c.studio.new_followers : null); return f != null ? f : -1; }
             return 0;
           };
           const tableRows = [...rows].sort((x, y) => {
@@ -1000,10 +1000,11 @@ function KpiDetail({ kind, a, rangeMode, onClose }) {
                 ${tableRows.map((c) => {
                   const views = Number(c.metrics.views) || 0;
                   const s = c.studio;
+                  const foll = c.newFollowers != null ? c.newFollowers : (s && s.new_followers != null ? s.new_followers : null); // captured Studio value preferred over the stale studio row
                   return html`<tr>
                     ${videoNameCell(c, setPlaying)}
                     ${COLS.map(([, fn]) => html`<td>${fn(c)}</td>`)}
-                    ${showStudio ? html`${scell('hook', s && s.hook_3s_pct, s && s.hook_3s_pct != null ? s.hook_3s_pct + '%' : null, views)}${scell('newv', s && s.new_viewers_pct, s && s.new_viewers_pct != null ? s.new_viewers_pct + '%' : null, views)}${scell('foll', s && s.new_followers, s && s.new_followers != null ? '+' + withThousands(s.new_followers) : null, views)}` : ''}
+                    ${showStudio ? html`${scell('hook', s && s.hook_3s_pct, s && s.hook_3s_pct != null ? s.hook_3s_pct + '%' : null, views)}${scell('newv', s && s.new_viewers_pct, s && s.new_viewers_pct != null ? s.new_viewers_pct + '%' : null, views)}${scell('foll', foll, foll != null ? '+' + withThousands(foll) : null, views)}` : ''}
                   </tr>`;
                 })}
               </tbody>
