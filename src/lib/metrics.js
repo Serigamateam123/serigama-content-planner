@@ -423,30 +423,45 @@ export function periodMetrics(contents, history, from, to) {
 }
 
 // Views that accrued per time bucket, from snapshot-to-snapshot deltas — the
-// Studio-style "views over time" trend. Attributes each gain to the later date.
+// Studio-style "views over time" trend. The gain between two snapshots is spread
+// EVENLY across every day in the gap, so a day with no snapshot doesn't read 0
+// with the next snapshot day spiking — it plateaus instead (a smoothed estimate
+// for untracked days; becomes exact once daily snapshots run every day).
 export function periodTrend(history, grain) {
   const byContent = metricsSeries(history);
-  const buckets = new Map();
-  const keyFor = (d) => {
-    const x = parse(d);
-    if (!x) return null;
-    if (grain === 'daily') return dayKey(x);
-    if (grain === 'weekly') {
-      const wk = startOfDay(x);
-      const dow = (wk.getDay() + 6) % 7;
-      return dayKey(addDays(wk, -dow));
-    }
-    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`;
-  };
+  const daily = new Map(); // dayKey -> views gained that day (smoothed)
   for (const series of byContent.values()) {
     for (let i = 1; i < series.length; i++) {
       const gain = Math.max(0, (Number(series[i].views) || 0) - (Number(series[i - 1].views) || 0));
       if (!gain) continue;
-      const k = keyFor(series[i].fetched_at);
-      if (k) buckets.set(k, (buckets.get(k) || 0) + gain);
+      const start = parse(series[i - 1].fetched_at);
+      const end = parse(series[i].fetched_at);
+      if (!start || !end) continue;
+      const days = Math.max(1, Math.round((startOfDay(end) - startOfDay(start)) / 86400000));
+      const per = gain / days;
+      for (let d = 1; d <= days; d++) {
+        const k = dayKey(addDays(startOfDay(start), d));
+        daily.set(k, (daily.get(k) || 0) + per);
+      }
     }
   }
-  const entries = fillGaps([...buckets.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)), grain);
+  // Aggregate the smoothed daily series up to the requested grain.
+  const keyFor = (dk) => {
+    const x = parse(dk);
+    if (grain === 'daily') return dk;
+    if (grain === 'weekly') {
+      const dow = (x.getDay() + 6) % 7;
+      return dayKey(addDays(startOfDay(x), -dow));
+    }
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}`;
+  };
+  const buckets = new Map();
+  for (const [dk, v] of daily) {
+    const k = keyFor(dk);
+    buckets.set(k, (buckets.get(k) || 0) + v);
+  }
+  const sorted = [...buckets.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, v]) => [k, Math.round(v)]);
+  const entries = fillGaps(sorted, grain);
   return entries.map(([k, v]) => ({ key: k, value: v }));
 }
 

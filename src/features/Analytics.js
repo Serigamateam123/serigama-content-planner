@@ -93,11 +93,21 @@ export function Analytics({ contents, campaigns, accounts, accountStats, metrics
   const kEng = rangeMode ? pm.engagement : a.totalEngagement;
   const kER = rangeMode ? pm.er : a.avgER;
   const kPosts = rangeMode ? pm.postsWithData : a.publishedCount;
-  // Overall (Studio-style) daily views need snapshot history; fall back to the
-  // by-post-date view when there's none yet. User's explicit pick wins.
-  const canOverall = pTrend.length > 0;
+  // Overall ("views over time") view. For the MONTHLY grain we use the captured
+  // TikTok Studio monthly totals (an exact match to Studio); daily/weekly use the
+  // smoothed snapshot series (periodTrend). Falls back to by-post-date when there's
+  // nothing to show yet. The user's explicit toggle pick always wins.
+  let studioMonthly = null;
+  try {
+    const mm = JSON.parse(localStorage.getItem('serigama.monthly') || 'null');
+    if (mm && mm.months) studioMonthly = Object.keys(mm.months).sort().map((k) => ({ key: k, value: Number(mm.months[k].views) || 0 }));
+  } catch (e) { studioMonthly = null; }
+  const hasStudioMonthly = !!(studioMonthly && studioMonthly.length);
+  const canOverall = pTrend.length > 0 || hasStudioMonthly;
   const usingOverall = (trendView || (canOverall ? 'overall' : 'post')) === 'overall';
-  const chartData = usingOverall ? pTrend : a.trend;
+  const overallIsStudio = f.grain === 'monthly' && hasStudioMonthly;
+  const overallData = overallIsStudio ? studioMonthly : pTrend;
+  const chartData = usingOverall ? overallData : a.trend;
 
   // Trend footer stats (follow whichever series is charted)
   const values = chartData.map((t) => t.value);
@@ -214,7 +224,9 @@ export function Analytics({ contents, campaigns, accounts, accountStats, metrics
           <div>
             <div class="card-title">Views trend</div>
             <div class="chart-sub">${usingOverall
-              ? 'How many views your account got each day — like TikTok Studio.'
+              ? (overallIsStudio
+                  ? 'Total views each month — matched to your TikTok Studio numbers.'
+                  : `Views your account got each ${f.grain === 'weekly' ? 'week' : 'day'} — like TikTok Studio (smoothed for the days before daily tracking; exact from now on).`)
               : 'Views grouped by the day each post was published.'}</div>
           </div>
           <div class="chart-controls">
