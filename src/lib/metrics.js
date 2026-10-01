@@ -429,22 +429,26 @@ export function periodMetrics(contents, history, from, to) {
 }
 
 // Views that accrued per time bucket, from snapshot-to-snapshot deltas — the
-// Studio-style "views over time" trend. The gain between two snapshots is spread
-// EVENLY across every day in the gap, so a day with no snapshot doesn't read 0
-// with the next snapshot day spiking — it plateaus instead (a smoothed estimate
-// for untracked days; becomes exact once daily snapshots run every day).
+// Studio-style "views over time" trend. The gain between two snapshots is split
+// across the calendar days in between IN PROPORTION TO THE HOURS in each day: the
+// sync runs at ~6am, so a 6am→6am gain is mostly the previous day's views (18h)
+// and only a little of the new day's (6h). Gaps of several days plateau evenly.
 // Pass `contents` so a video posted after tracking began also counts the views it
-// got before its first snapshot (spread from its publish day to that snapshot's
-// day) — otherwise a video that pops on day one is badly undercounted. Videos
-// posted before tracking began are skipped: their first snapshot is lifetime views.
+// got before its first snapshot (spread from its publish time to that snapshot) —
+// otherwise a video that pops on day one is badly undercounted. Videos posted
+// before tracking began are skipped: their first snapshot is lifetime views.
 export function periodTrend(history, grain, contents = null) {
   const byContent = metricsSeries(history);
-  const daily = new Map(); // dayKey -> views gained that day (smoothed)
+  const daily = new Map(); // dayKey -> views gained that day (estimated)
   const spread = (from, to, total) => {
-    const days = Math.max(0, Math.round((startOfDay(to) - startOfDay(from)) / 86400000));
-    for (let d = 0; d <= days; d++) {
-      const k = dayKey(addDays(startOfDay(from), d));
-      daily.set(k, (daily.get(k) || 0) + total / (days + 1));
+    if (!(total > 0)) return;
+    const span = to - from;
+    if (span <= 0) { const k = dayKey(to); daily.set(k, (daily.get(k) || 0) + total); return; }
+    for (let day = startOfDay(from); day < to; day = addDays(day, 1)) {
+      const overlap = Math.min(to, addDays(day, 1)) - Math.max(from, day);
+      if (overlap <= 0) continue;
+      const k = dayKey(day);
+      daily.set(k, (daily.get(k) || 0) + (total * overlap) / span);
     }
   };
   if (contents && byContent.size) {
@@ -457,25 +461,16 @@ export function periodTrend(history, grain, contents = null) {
     const trackingStart = firstTracked ? startOfDay(firstTracked) : null;
     for (const [id, series] of byContent) {
       const pub = pubOf.get(id);
-      const first = series[0];
-      const at = parse(first.fetched_at);
-      const v = Number(first.views) || 0;
-      if (pub && at && trackingStart && v > 0 && startOfDay(pub) >= trackingStart && pub <= at) spread(pub, at, v);
+      const at = parse(series[0].fetched_at);
+      if (pub && at && trackingStart && startOfDay(pub) >= trackingStart && pub <= at) spread(pub, at, Number(series[0].views) || 0);
     }
   }
   for (const series of byContent.values()) {
     for (let i = 1; i < series.length; i++) {
       const gain = Math.max(0, (Number(series[i].views) || 0) - (Number(series[i - 1].views) || 0));
-      if (!gain) continue;
       const start = parse(series[i - 1].fetched_at);
       const end = parse(series[i].fetched_at);
-      if (!start || !end) continue;
-      const days = Math.max(1, Math.round((startOfDay(end) - startOfDay(start)) / 86400000));
-      const per = gain / days;
-      for (let d = 1; d <= days; d++) {
-        const k = dayKey(addDays(startOfDay(start), d));
-        daily.set(k, (daily.get(k) || 0) + per);
-      }
+      if (gain && start && end) spread(start, end, gain);
     }
   }
   // Aggregate the smoothed daily series up to the requested grain.

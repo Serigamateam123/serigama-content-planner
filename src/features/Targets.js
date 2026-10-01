@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks';
 import { Icon, Modal } from '../components/ui.js';
 import { readKV, writeKV } from '../lib/kv.js';
 import { compact, withThousands, periodTrend } from '../lib/metrics.js';
-import { shortMonth, dayKey, addDays, startOfWeek } from '../lib/date.js';
+import { shortMonth, dayKey, addDays, startOfWeek, startOfDay } from '../lib/date.js';
 
 // Targets — a monthly "views in the month" target the whole team can follow.
 //  • Year (main view): Jan–Dec, one bar per month (green hit / red missed /
@@ -18,10 +18,8 @@ import { shortMonth, dayKey, addDays, startOfWeek } from '../lib/date.js';
 const KEY = 'serigama.targets';
 
 // Agreed plan: 563K in October 2026, then +5% every month from November.
-// Months before the start get *reference* targets, counted backwards at the same
-// % (Sep = 563K ÷ 1.05, …) back to `referenceFrom` — shown lighter, set
-// afterwards, never counted in the official hit record. '' turns them off.
-const DEFAULT_VIEWS_TARGET = { startMonth: '2026-10', start: 563000, growthPct: 5, overrides: {}, referenceFrom: '2026-01' };
+// Months before the start have no target (unless one is set by hand).
+const DEFAULT_VIEWS_TARGET = { startMonth: '2026-10', start: 563000, growthPct: 5, overrides: {} };
 const OUTLIER_FACTOR = 2; // a bar this many × above the targets is drawn capped
 
 // --- month helpers ("YYYY-MM" keys) ------------------------------------------
@@ -40,16 +38,14 @@ export function readTargets() {
 }
 
 // Target for a month: the override if one is set (any month), else
-// start × (1 + growth)^n — n is negative for reference months before the start.
+// start × (1 + growth)^n from the start month on.
 export function targetFor(cfg, ym) {
   if (cfg.overrides && cfg.overrides[ym] != null) return Number(cfg.overrides[ym]);
   const n = monthsBetween(cfg.startMonth, ym);
-  if (n < 0 && !(cfg.referenceFrom && ym >= cfg.referenceFrom)) return null;
+  if (n < 0) return null;
   return Math.round(Number(cfg.start) * Math.pow(1 + Number(cfg.growthPct) / 100, n));
 }
 
-// Months before the plan started only ever have targets set afterwards.
-const isReference = (cfg, ym) => ym < cfg.startMonth;
 
 export function Targets({ contents, metricsHistory }) {
   const [targets, setTargets] = useState(readTargets);
@@ -62,7 +58,7 @@ export function Targets({ contents, metricsHistory }) {
   const now = new Date();
   const curYm = ymOf(now);
   const studio = (readKV('serigama.monthly', {}) || {}).months || {};
-  const firstTargetYm = [cfg.startMonth, cfg.referenceFrom, ...Object.keys(cfg.overrides || {})].filter(Boolean).sort()[0];
+  const firstTargetYm = [cfg.startMonth, ...Object.keys(cfg.overrides || {})].sort()[0];
   const latestPaceYm = curYm > firstTargetYm ? curYm : firstTargetYm;
   const [paceYm, setPaceYm] = useState(latestPaceYm);
   const [year, setYear] = useState(now.getFullYear()); // year shown in the Jan–Dec view
@@ -71,6 +67,11 @@ export function Targets({ contents, metricsHistory }) {
   const published = (contents || []).filter((c) => c.status === 'published');
   const daily = new Map(periodTrend(metricsHistory || [], 'daily', published).map((p) => [p.key, p.value]));
   const lastSyncDay = [...daily.keys()].sort().pop() || null;
+  // When the latest sync ran (~6am): today's numbers only cover up to then, so
+  // "where should we be" uses the same cut-off instead of the whole day.
+  const lastSnapAt = (metricsHistory || []).reduce((mx, m) => { const t = new Date(m.fetched_at); return t > mx ? t : mx; }, new Date(0));
+  const DAY = 86400000;
+  const dayShare = (d) => (dayKey(d) === dayKey(now) && lastSnapAt > startOfDay(now) ? Math.min(1, (Math.min(now, lastSnapAt) - startOfDay(now)) / DAY) : 1);
 
   // Everything about one month's progress toward its target.
   const progress = (ym) => {
@@ -103,10 +104,13 @@ export function Targets({ contents, metricsHistory }) {
     // the daily-sync estimate (or a part-month capture) is never judged hit/missed.
     const final = isPast && source === 'studio' && !!(st && st.complete);
     const needsStudio = isPast && done != null && !final;
-    const expected = target != null && asOfDay ? Math.round((target * asOfDay) / n) : null;
-    const forecast = isCur && done != null && asOfDay >= 3 ? Math.round((done / asOfDay) * n) : null;
-    return { ym, n, target, done, asOfDay, source, final, needsStudio, series, expected, forecast, isCur, isPast,
-      overridden: !!(cfg.overrides && cfg.overrides[ym] != null), reference: target != null && isReference(cfg, ym) };
+    // Days of data so far: for this month's sync numbers, up to the last sync time.
+    let elapsed = asOfDay;
+    if (isCur && source === 'sync' && lastSnapAt > ymDate(ym)) elapsed = Math.min(n, Math.max(0, (Math.min(now, lastSnapAt) - ymDate(ym)) / DAY));
+    const expected = target != null && elapsed ? Math.round((target * elapsed) / n) : null;
+    const forecast = isCur && done != null && elapsed >= 3 ? Math.round((done / elapsed) * n) : null;
+    return { ym, n, target, done, asOfDay, elapsed, source, final, needsStudio, series, expected, forecast, isCur, isPast,
+      overridden: !!(cfg.overrides && cfg.overrides[ym] != null) };
   };
 
   const p = progress(paceYm);
@@ -122,14 +126,14 @@ export function Targets({ contents, metricsHistory }) {
   const judged = [];
   for (let ym = cfg.startMonth; ym < curYm; ym = addMonths(ym, 1)) {
     const m = progress(ym);
-    if (m.final && m.target != null && !m.reference) judged.push(m);
+    if (m.final && m.target != null) judged.push(m);
   }
   const hits = judged.filter((m) => m.done >= m.target).length;
   const last3 = judged.slice(-3);
   const holdHint = last3.length === 3 && last3.every((m) => m.done < m.target);
 
   // Weekly check (Mon–Sun): each day's share of its month's target vs that day's views.
-  const dayTarget = (d) => { const ym = ymOf(d); if (isReference(cfg, ym)) return 0; const t = targetFor(cfg, ym); return t ? t / daysIn(ym) : 0; };
+  const dayTarget = (d) => { const ym = ymOf(d); const t = targetFor(cfg, ym); return t ? t / daysIn(ym) : 0; };
   const week = (monday, soFar) => {
     let target = 0, expected = 0, actual = 0, days = 0;
     for (let i = 0; i < 7; i++) {
@@ -137,7 +141,9 @@ export function Targets({ contents, metricsHistory }) {
       const t = dayTarget(d);
       target += t;
       const k = dayKey(d);
-      if (lastSyncDay && k <= lastSyncDay && (!soFar || d <= now)) { expected += t; actual += daily.get(k) || 0; days++; }
+      // Only days that have a target count, so a week that straddles the plan's
+      // start isn't padded with views from untargeted days.
+      if (t > 0 && lastSyncDay && k <= lastSyncDay && (!soFar || d <= now)) { expected += t * (soFar ? dayShare(d) : 1); actual += daily.get(k) || 0; days++; }
     }
     return { from: monday, to: addDays(monday, 6), target: Math.round(target), expected: Math.round(expected), actual: Math.round(actual), days };
   };
@@ -165,30 +171,33 @@ export function Targets({ contents, metricsHistory }) {
   const pct = (a, t) => (a != null && t ? Math.round((a / t) * 100) : null);
   const diff = p.done != null && p.expected != null ? p.done - p.expected : null;
   const remaining = p.target != null && p.done != null ? p.target - p.done : null;
-  const daysLeft = p.n - p.asOfDay;
+  const daysLeft = p.n - p.elapsed;
+  const daysLeftShown = Math.max(1, Math.round(daysLeft));
+  const asOfText = p.source === 'sync' && p.isCur && lastSnapAt > startOfDay(now)
+    ? `as of today ${lastSnapAt.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' })}` : `by day ${p.asOfDay}`;
   const mon = shortMonth(ymDate(p.ym));
   const cards = p.target == null ? null : p.needsStudio ? [
-    { label: `${p.reference ? 'Reference target' : 'Target'} · ${ymLabel(p.ym)}`, value: compact(p.target), sub: p.reference ? 'set afterwards — for comparison' : 'month finished' },
+    { label: `Target · ${ymLabel(p.ym)}`, value: compact(p.target), sub: 'month finished' },
     { label: 'Estimated views', value: '≈' + compact(p.done),
       sub: p.source === 'sync' ? `daily-sync estimate · not official` : `TikTok Studio, 1–${p.asOfDay} ${mon} only` },
     { label: 'Result', value: 'Needs Studio total', sub: `capture 1–${p.n} ${mon} from TikTok Studio` },
     { label: 'Versus target', value: `≈${pct(p.done, p.target)}%`, sub: 'estimate — not counted' },
   ] : [
-    { label: `${p.reference ? 'Reference target' : 'Target'} · ${ymLabel(p.ym)}`, value: compact(p.target),
-      sub: p.reference ? 'set afterwards — for comparison' : p.final ? 'month finished' : p.asOfDay ? `day ${p.asOfDay} of ${p.n}` : p.isCur || p.isPast ? 'no numbers yet' : 'starts soon' },
+    { label: `Target · ${ymLabel(p.ym)}`, value: compact(p.target),
+      sub: p.final ? 'month finished' : p.asOfDay ? `day ${p.asOfDay} of ${p.n}` : p.isCur || p.isPast ? 'no numbers yet' : 'starts soon' },
     { label: p.final ? 'Final views' : 'Done so far', value: p.done != null ? compact(p.done) : '—',
-      sub: p.done != null ? `${pct(p.done, p.target)}% of target · ${p.source === 'sync' ? 'daily sync' : 'TikTok Studio'}` : 'appears after the daily sync' },
+      sub: p.done != null ? `${pct(p.done, p.target)}% of target · ${p.source === 'sync' ? `daily sync, ${asOfText}` : 'TikTok Studio'}` : 'appears after the daily sync' },
     p.final
-      ? { label: p.reference ? 'Would have…' : 'Result', value: p.done >= p.target ? (p.reference ? 'Hit' : '✅ Hit') : `${compact(p.target - p.done)} short`,
-          sub: p.done >= p.target ? `${signed(p.done - p.target)} above target` : p.reference ? 'below the reference' : 'missed this month', tone: p.done >= p.target ? 'good' : 'bad' }
+      ? { label: 'Result', value: p.done >= p.target ? '✅ Hit' : `${compact(p.target - p.done)} short`,
+          sub: p.done >= p.target ? `${signed(p.done - p.target)} above target` : 'missed this month', tone: p.done >= p.target ? 'good' : 'bad' }
       : { label: 'Status', value: diff == null ? '—' : `${signed(diff)} ${diff >= 0 ? 'ahead' : 'behind'}`,
-          sub: diff == null ? 'needs a few days of numbers' : `should be at ${compact(p.expected)} by day ${p.asOfDay}`, tone: diff == null ? null : diff >= 0 ? 'good' : 'bad' },
+          sub: diff == null ? 'needs a few days of numbers' : `should be at ${compact(p.expected)} ${asOfText}`, tone: diff == null ? null : diff >= 0 ? 'good' : 'bad' },
     p.final
       ? { label: 'Versus target', value: `${pct(p.done, p.target)}%`, sub: p.source === 'studio' ? 'final · TikTok Studio' : 'daily sync estimate' }
       : remaining != null && remaining <= 0
       ? { label: 'Needed per day', value: '🎉 Done', sub: 'target already reached', tone: 'good' }
       : { label: 'Needed per day', value: remaining != null && daysLeft > 0 ? compact(Math.round(remaining / daysLeft)) : '—',
-          sub: remaining != null && daysLeft > 0 ? `for the last ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}` : '—' },
+          sub: remaining != null && daysLeft > 0 ? `for the last ${daysLeftShown} ${daysLeftShown === 1 ? 'day' : 'days'}` : '—' },
   ];
 
   return html`<div>
@@ -196,7 +205,7 @@ export function Targets({ contents, metricsHistory }) {
       <div>
         <div class="eyebrow">Report</div>
         <h1 class="page-title">Targets</h1>
-        <div class="page-sub">Monthly <strong>views in the month</strong> — ${compact(cfg.start)} in ${ymLabel(cfg.startMonth)}, then +${cfg.growthPct}% every month${cfg.referenceFrom && cfg.referenceFrom < cfg.startMonth ? html` · reference targets from ${ymLabel(cfg.referenceFrom)}` : ''}</div>
+        <div class="page-sub">Monthly <strong>views in the month</strong> — ${compact(cfg.start)} in ${ymLabel(cfg.startMonth)}, then +${cfg.growthPct}% every month</div>
       </div>
       <div class="page-actions">
         <button class="btn" onClick=${() => window.print()}><${Icon} name="print" size=${15} /> Print / PDF</button>
@@ -258,10 +267,10 @@ export function Targets({ contents, metricsHistory }) {
             <span><i class="sq" style=${{ background: '#f5b517' }}></i>In progress</span>
             ${months.some((m) => m.needsStudio) ? html`<span><i class="sq" style=${{ background: '#b8bfcc' }}></i>Estimate — needs TikTok Studio total</span>` : ''}
             ${months.some((m) => m.isCur && m.target != null) ? html`<span><i style=${{ borderTop: '2px dashed #1f2430' }}></i>This month's target</span>` : ''}
-            ${months.some((m) => m.reference) ? html`<span><i class="sq" style=${{ background: '#0f9d58', opacity: 0.4 }}></i>Faded = before targets started (reference)</span>` : ''}
+            ${months.some((m) => m.target == null && m.done != null) ? html`<span><i class="sq" style=${{ background: '#cfd6f5' }}></i>No target set</span>` : ''}
           </div>
           <${MonthBars} months=${months} />
-          <div class="muted" style=${{ fontSize: '12.5px', margin: '8px 0 14px' }}>${judged.length ? html`Hit target <strong>${hits} of ${judged.length}</strong> finished ${judged.length === 1 ? 'month' : 'months'} since ${ymLabel(cfg.startMonth)}.` : `The official record starts with ${ymLabel(cfg.startMonth)} — results appear once it finishes.`}${months.some((m) => m.reference) ? ' Faded months before then use reference targets and don’t count.' : ''}</div>
+          <div class="muted" style=${{ fontSize: '12.5px', margin: '8px 0 14px' }}>${judged.length ? html`Hit target <strong>${hits} of ${judged.length}</strong> finished ${judged.length === 1 ? 'month' : 'months'} since ${ymLabel(cfg.startMonth)}.` : `The official record starts with ${ymLabel(cfg.startMonth)} — results appear once it finishes.`}</div>
           <${MonthTable} months=${months} cfg=${cfg} rowEdit=${rowEdit} setRowEdit=${setRowEdit} setErr=${setErr} saveRow=${saveRow} resetRow=${resetRow} />
           ${err && rowEdit ? html`<div class="toast toast-err">${err}</div>` : ''}`}
     </div>
@@ -312,11 +321,10 @@ function MonthTable({ months, cfg, rowEdit, setRowEdit, setErr, saveRow, resetRo
           const p = m.needsStudio ? null : pct(m.final ? m.done : m.forecast, m.target);
           const status = m.target == null ? ['No target set', 'tgt-muted']
             : m.needsStudio ? ['Needs Studio total', 'tgt-muted']
-            : m.reference ? (m.final ? (m.done >= m.target ? ['Would have hit', 'tgt-ref-chip'] : ['Would have missed', 'tgt-ref-chip']) : ['Reference', 'tgt-ref-chip'])
             : m.final ? (m.done >= m.target ? ['✅ Hit', 'tgt-hit-chip'] : ['Missed', 'tgt-miss-chip'])
             : m.isCur ? ['In progress', 'tgt-cur-chip']
             : m.isPast ? ['Capture from Studio', 'tgt-muted'] : ['Upcoming', 'tgt-muted'];
-          return html`<tr class=${m.reference ? 'tgt-ref-row' : ''} style=${m.isCur ? { background: '#fff7e6' } : {}}>
+          return html`<tr style=${m.isCur ? { background: '#fff7e6' } : {}}>
             <td><strong>${ymLabel(m.ym)}</strong></td>
             <td>${editingRow
               ? html`<span class="tgt-edit">
@@ -326,7 +334,7 @@ function MonthTable({ months, cfg, rowEdit, setRowEdit, setErr, saveRow, resetRo
                   <button class="btn btn-sm btn-ghost" onClick=${() => setRowEdit(null)}>Cancel</button>
                 </span>`
               : m.target == null ? html`<span class="muted">—</span>`
-              : html`${compact(m.target)}${m.overridden ? html` <span class="muted" title="Set by hand for this month">✱</span>` : ''}${m.reference ? html`<span class="muted" style=${{ display: 'block', fontSize: '11px' }}>reference</span>` : ''}`}</td>
+              : html`${compact(m.target)}${m.overridden ? html` <span class="muted" title="Set by hand for this month">✱</span>` : ''}`}</td>
             <td>${m.done == null ? html`<span class="muted">—</span>`
               : m.needsStudio
               ? html`<span class="muted">≈${compact(m.done)}</span><span class="muted" style=${{ display: 'block', fontSize: '11px' }}>${m.source === 'sync' ? 'daily-sync estimate' : `Studio, 1–${m.asOfDay} only`}</span>`
@@ -345,7 +353,6 @@ function TargetModal({ cfg, err, onClose, onSave }) {
   const [startMonth, setStartMonth] = useState(cfg.startMonth);
   const [start, setStart] = useState(cfg.start);
   const [growth, setGrowth] = useState(cfg.growthPct);
-  const [refFrom, setRefFrom] = useState(cfg.referenceFrom || '');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -356,8 +363,7 @@ function TargetModal({ cfg, err, onClose, onSave }) {
     if (!(Number(growth) >= 0)) { setMsg('Enter a growth % of 0 or more.'); return; }
     setMsg('');
     setBusy(true);
-    if (refFrom && !/^\d{4}-\d{2}$/.test(refFrom)) { setMsg('Pick a month for reference targets, or clear it.'); return; }
-    await onSave({ startMonth, start: Math.round(Number(start)), growthPct: Math.round(Number(growth) * 10) / 10, referenceFrom: refFrom && refFrom < startMonth ? refFrom : '' });
+    await onSave({ startMonth, start: Math.round(Number(start)), growthPct: Math.round(Number(growth) * 10) / 10 });
     setBusy(false);
   };
 
@@ -383,11 +389,6 @@ function TargetModal({ cfg, err, onClose, onSave }) {
       <label>Increase every month (%)</label>
       <input type="number" min="0" step="0.5" value=${growth} onInput=${(e) => setGrowth(e.target.value)} />
       <div class="help">Each month's target = the month before × (1 + this %). Months you've set by hand keep their own number.</div>
-    </div>
-    <div class="field">
-      <label>Reference targets back to <span class="muted" style=${{ fontWeight: 400 }}>(optional)</span></label>
-      <input type="month" value=${refFrom} onInput=${(e) => setRefFrom(e.target.value)} />
-      <div class="help">Fills months before the start with targets counted backwards at the same %, for comparison only — shown lighter and never counted as hit or missed. Clear it to hide them.</div>
     </div>
     <div class="muted" style=${{ fontSize: '12.5px' }}>
       <strong>Preview:</strong> ${preview.map((x, i) => html`${i ? ' → ' : ''}${ymLabel(x.ym).split(' ')[0]} ${compact(x.v)}`)}
@@ -482,13 +483,14 @@ function MonthBars({ months }) {
   const y = (v) => padT + innerH - (Math.min(v, niceMax) / niceMax) * innerH;
   const bw = Math.min(46, slot * 0.56);
   const gridVals = Array.from({ length: 5 }, (_, i) => (niceMax / 4) * i);
-  const color = (m) => (m.done == null ? null : m.needsStudio ? '#b8bfcc' : !m.final ? '#f5b517' : m.target == null ? '#9aa2b1' : m.done >= m.target ? '#0f9d58' : '#e5484d');
+  const color = (m) => (m.done == null ? null : m.needsStudio ? '#b8bfcc' : !m.final ? '#f5b517' : m.target == null ? '#cfd6f5' : m.done >= m.target ? '#0f9d58' : '#e5484d');
 
   let tip = null;
   if (hover != null) {
     const m = months[hover];
     const lines = [ymLabel(m.ym)];
-    if (m.target != null) lines.push(`${m.reference ? 'Reference target' : 'Target'}  ${withThousands(m.target)}`);
+    if (m.target != null) lines.push(`Target  ${withThousands(m.target)}`);
+    else if (m.done != null) lines.push('No target set');
     if (m.needsStudio) lines.push(`Estimate  ≈${withThousands(Math.round(m.done))}`, 'Needs the TikTok Studio total');
     else if (m.done != null) lines.push(`${m.final ? 'Views' : 'So far'}  ${withThousands(Math.round(m.done))}${m.final ? '' : ` (to day ${m.asOfDay})`}`);
     if (!m.final && m.forecast != null) lines.push(`Forecast  ${withThousands(m.forecast)}`);
@@ -512,7 +514,7 @@ function MonthBars({ months }) {
       ${months.map((m, i) => {
         const c = color(m);
         return html`<g>
-          ${c ? html`<rect x=${cx(i) - bw / 2} y=${y(m.done)} width=${bw} height=${Math.max(1, padT + innerH - y(m.done))} rx="4" fill=${c} opacity=${(m.reference ? 0.4 : 1) * (hover == null || hover === i ? 1 : 0.55)} />` : ''}
+          ${c ? html`<rect x=${cx(i) - bw / 2} y=${y(m.done)} width=${bw} height=${Math.max(1, padT + innerH - y(m.done))} rx="4" fill=${c} opacity=${hover == null || hover === i ? 1 : 0.55} />` : ''}
           ${c && m.done > niceMax ? html`<text x=${cx(i)} y=${padT - 8} text-anchor="middle" font-size="10.5" font-weight="700" fill=${c}>${compact(m.done)} ↑</text>` : ''}
           <text x=${cx(i)} y=${H - 12} text-anchor="middle" font-size="11" fill=${m.isCur ? '#1f2430' : '#9aa2b1'} font-weight=${m.isCur ? 700 : 400}>${ymLabel(m.ym).split(' ')[0]}</text>
         </g>`;

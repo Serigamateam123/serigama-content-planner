@@ -465,8 +465,6 @@ button { font-family: inherit; }
 .tgt-miss-chip { background: #fdecec; color: #b42318; }
 .tgt-cur-chip { background: #fff3d6; color: #9a6700; }
 .tgt-muted { background: #eef1f8; color: #5b657a; }
-.tgt-ref-chip { background: #f4f5f8; color: #8a93a5; font-weight: 500; }
-.tgt-ref-row td { color: var(--muted); }
 .tgt-edit { display: inline-flex; gap: 6px; align-items: center; }
 .tgt-edit input { width: 120px; }
 .tgt-weeks { display: flex; flex-direction: column; gap: 8px; }
