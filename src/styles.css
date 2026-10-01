@@ -452,3 +452,15 @@ button { font-family: inherit; }
 .st-takedown { color: #b42318; }
 
 @media (max-width: 900px) { .nav-label { display: none; } .cal-hint { display: none; } }
+
+/* --- Targets ------------------------------------------------------------ */
+.tgt-legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--muted); margin: 4px 0 8px; }
+.tgt-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.tgt-legend i { display: inline-block; width: 20px; height: 0; }
+.tgt-chip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+.tgt-hit { background: #e6f7ec; color: #1c8a45; }
+.tgt-miss { background: #fdecec; color: #b42318; }
+.tgt-cur { background: #fff3d6; color: #9a6700; }
+.tgt-muted { background: #eef1f8; color: #5b657a; }
+.tgt-edit { display: inline-flex; gap: 6px; align-items: center; }
+.tgt-edit input { width: 120px; }

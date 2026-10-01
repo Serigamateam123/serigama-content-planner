@@ -67,7 +67,9 @@ Every value is written to the cloud via `window.serigamaCloud.set(...)` (see §5
     `serigama.audience`, `serigama.monthlyfollowers`, `serigama.saves`, `serigama.newfollowers`;
   - planner data you enter in the app: `serigama.fundamental` (Content Funnel inspo clips),
     `serigama.contentmeta` (per-post funnel stage / pillar / product / assigned-to / hook / CTA,
-    keyed by content id), `serigama.goals` (monthly goals), `serigama.reports` (saved report snapshots).
+    keyed by content id), `serigama.goals` (monthly goals), `serigama.reports` (saved report snapshots),
+    `serigama.targets` (the Targets page's views-in-the-month target: start month, start value,
+    monthly growth % and any months set by hand).
 - `syncKV()` — **cloud-authoritative**: for each key, the cloud value is mirrored down to
   localStorage; a key the cloud does not have yet is seeded **once** from this browser.
   Runs before the analytics views read localStorage.

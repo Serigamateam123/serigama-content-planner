@@ -3,7 +3,7 @@
 A simple, private planner for your social content — a **calendar**, **production pipeline**, and
 **performance dashboard** in one page. Built to run with no build tools and no monthly fees.
 
-Five screens, in two groups:
+Six screens, in two groups:
 
 **Plan**
 - **Content Dashboard** — what's due, what needs attention, the production pipeline
@@ -16,6 +16,9 @@ Five screens, in two groups:
 - **Monthly Report** — the one-glance summary for meetings: pick any month or date range and every
   number follows it — goals and pace, headline numbers, what kind of
   content works (by funnel stage / pillar / product), and **saved report snapshots**.
+- **Targets** — a monthly *views in the month* target vs actual line chart (like a sales target
+  chart): starts at 563K in Oct 2026 and grows 5% a month, with this month's forecast and a
+  month-by-month table where any month's target can be changed.
 - **Post Performance** — every post's numbers in detail, trends, hashtags, followers, audience.
 
 ---

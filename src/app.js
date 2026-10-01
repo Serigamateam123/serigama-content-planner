@@ -8,11 +8,12 @@ import { Calendar } from './features/Calendar.js';
 import { Fundamental } from './features/Fundamental.js';
 import { Analytics } from './features/Analytics.js';
 import { AnalyticsDashboard } from './features/AnalyticsDashboard.js';
+import { Targets } from './features/Targets.js';
 import { ContentModal } from './features/ContentModal.js';
 import { Login } from './features/Login.js';
 import { readKV, updateKVEntry } from './lib/kv.js';
 
-const ROUTES = ['dashboard', 'calendar', 'fundamental', 'overview', 'analytics'];
+const ROUTES = ['dashboard', 'calendar', 'fundamental', 'overview', 'targets', 'analytics'];
 
 // Planning fields kept per post in app_kv (key `serigama.contentmeta`, map of
 // content id -> fields) rather than as columns, so they work without a database
@@ -50,6 +51,7 @@ const KV_KEYS = [
   'serigama.contentmeta',
   'serigama.goals',
   'serigama.reports',
+  'serigama.targets',
 ];
 
 // Supabase (app_kv) is the SOURCE OF TRUTH for these manually-captured figures.
@@ -199,6 +201,8 @@ function App() {
           : route === 'overview'
           ? html`<${AnalyticsDashboard} contents=${contents} accounts=${accounts} accountStats=${accountStats}
               onNavigate=${navigate} onRefresh=${loadData} />`
+          : route === 'targets'
+          ? html`<${Targets} contents=${contents} metricsHistory=${metricsHistory} />`
           : html`<${Analytics} contents=${contents} accounts=${accounts} accountStats=${accountStats} metricsHistory=${metricsHistory} onSaveMetrics=${saveMetrics} />`}
       </div>
     </main>
