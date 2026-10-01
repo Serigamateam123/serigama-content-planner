@@ -198,9 +198,7 @@ export function Analytics({ contents, accounts, accountStats, metricsHistory, on
       : null}
 
     ${sel === 'views' ? html`
-      <${MonthlyReport} contents=${contents} followers=${a.followerGrowth ? a.followerGrowth.current : 0} />
-
-      <${HashtagCard} rows=${a.hashtags} active=${f.hashtag} onPick=${pickHashtag} />
+      <${MonthlyReport} contents=${contents} />
     ` : ''}
 
     ${showEntry
@@ -389,43 +387,6 @@ function FollowerCard({ fg, gains, posts, onClose }) {
       </div>`;
     })() : ''}
     ${playing ? html`<${VideoModal} video=${playing} onClose=${() => setPlaying(null)} />` : ''}
-  </div>`;
-}
-
-// Top hashtags: which topics pull views. Rows are clickable to filter the whole page.
-// Collapsed to the top few by default; "Show all" expands the rest.
-function HashtagCard({ rows, active, onPick }) {
-  const [expanded, setExpanded] = useState(false);
-  if (!rows || rows.length === 0) return null;
-  const TOP = 5;
-  const shown = expanded ? rows : rows.slice(0, TOP);
-  const hidden = rows.length - TOP;
-  return html`<div class="card card-pad section-gap">
-    <div class="card-title" style=${{ marginBottom: '4px' }}>Top hashtags</div>
-    <p class="muted" style=${{ fontSize: '12.5px', marginTop: 0 }}>Which topics pull the most views. Click a hashtag to filter everything above by it.</p>
-    <div style=${{ overflowX: 'auto' }}>
-      <table class="atable">
-        <thead><tr>
-          <th>Hashtag</th><th>Posts</th><th>Avg views</th><th>Avg ER</th><th>Total views</th>
-        </tr></thead>
-        <tbody>
-          ${shown.map((h) => html`<tr
-            style=${{ cursor: 'pointer', background: active === h.tag ? '#fff7e6' : '' }}
-            onClick=${() => onPick(h.tag)}>
-            <td><strong>${h.tag}</strong></td>
-            <td>${h.posts}</td>
-            <td>${compact(h.avgViews)}</td>
-            <td>${h.avgER}%</td>
-            <td>${compact(h.totalViews)}</td>
-          </tr>`)}
-        </tbody>
-      </table>
-    </div>
-    ${hidden > 0
-      ? html`<button class="btn btn-sm" style=${{ marginTop: '10px' }} onClick=${() => setExpanded((v) => !v)}>
-          ${expanded ? 'Show less' : `Show all ${rows.length} hashtags`}
-        </button>`
-      : ''}
   </div>`;
 }
 
@@ -619,7 +580,7 @@ function monthSpan(firstKey, lastKey) {
   return firstKey === lastKey ? `${a} ${y1}` : `${a} – ${b} ${y1}`;
 }
 
-function MonthlyReport({ contents, followers }) {
+function MonthlyReport({ contents }) {
   let stored = null;
   try { stored = JSON.parse(localStorage.getItem('serigama.monthly') || 'null'); } catch (e) { stored = null; }
   if (!stored || !stored.months) return '';
@@ -631,35 +592,14 @@ function MonthlyReport({ contents, followers }) {
   const monthOf = (c) => { const d = parse(c.published_at); return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : ''; };
   const pubList = (ym) => (contents || []).filter((c) => c.status === 'published' && monthOf(c) === ym);
   const pubViews = (ym) => pubList(ym).reduce((s, c) => s + (Number(c.metrics && c.metrics.views) || 0), 0);
-  const ts = stored.trafficSourceOverall || {};
-  // Followers at the end of a past month = today's total minus the net gains
-  // captured for every later month. Null if a later month wasn't captured.
-  const followersAt = (ym) => {
-    if (!ym || !followers) return null;
-    let mf = null;
-    try { mf = JSON.parse(localStorage.getItem('serigama.monthlyfollowers') || 'null'); } catch (e) { mf = null; }
-    if (!mf) return null;
-    const lastKey = Object.keys(mf).sort().pop();
-    let n = followers;
-    for (let d = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 1); ; d.setMonth(d.getMonth() + 1)) {
-      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      if (k > lastKey) break;
-      if (mf[k] == null) return null;
-      n -= Number(mf[k]);
-    }
-    return n > 0 ? n : null;
-  };
 
   const rows = keys.map((k) => {
     const m = stored.months[k];
     const ongoing = k === `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-    return { m, ongoing, short: m.label.slice(0, 3), label: m.complete ? m.label : ongoing ? `${m.label} (1–${m.days} so far)` : `${m.label} — 1–${m.days} only`, studioViews: m.views, pubV: pubViews(k), posts: pubList(k).length, cf: ceilingFloor(pubList(k)) };
+    return { key: k, m, ongoing, short: m.label.slice(0, 3), label: m.complete ? m.label : ongoing ? `${m.label} (1–${m.days} so far)` : `${m.label} — 1–${m.days} only`, studioViews: m.views, pubV: pubViews(k), posts: pubList(k).length, cf: ceilingFloor(pubList(k)) };
   });
   rows.forEach((r, i) => { r.prevCf = i > 0 ? rows[i - 1].cf : null; });
 
-  // All-time ceiling: the best video ever, whichever month it was posted in.
-  const allTime = ceilingFloor((contents || []).filter((c) => c.status === 'published'));
-  const allTimeWhen = allTime ? parse(allTime.ceilingPost.published_at) : null;
   const clipT = (t, n = 34) => { t = (t || '(untitled)').trim(); return t.length > n ? t.slice(0, n) + '…' : t; };
   // ▲/▼ vs the month before, as a % change.
   const delta = (cur, prev) => {
@@ -668,25 +608,7 @@ function MonthlyReport({ contents, followers }) {
     if (pct === 0) return html`<span class="wow wow-flat">± 0%</span>`;
     return html`<span class=${'wow ' + (pct > 0 ? 'wow-up' : 'wow-down')} title="vs the month before">${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}%</span>`;
   };
-  // Plain-language read of the latest month with ceiling & floor data.
-  const cfRows = rows.filter((r) => r.cf);
-  const latest = cfRows[cfRows.length - 1];
-  const prevCf = latest ? latest.prevCf : null;
-  let cfVerdict = '';
-  if (latest && prevCf) {
-    const cUp = latest.cf.ceiling >= prevCf.ceiling, fUp = latest.cf.floor >= prevCf.floor;
-    cfVerdict = cUp && fUp ? '✅ Both went up — big ideas and normal videos are getting stronger.'
-      : !cUp && !fUp ? '⚠️ Both dropped — nothing broke out, and normal videos are getting less reach too.'
-      : cUp ? '🎯 The ceiling rose but the floor fell — a hit carried the month; normal videos need work.'
-      : '🪵 The floor rose but the ceiling fell — steadier normal videos, but no big breakout.';
-  }
-  const last = rows[rows.length - 1];
   const peak = rows.reduce((a, b) => (b.studioViews > a.studioViews ? b : a));
-  const avgViews = rows.reduce((s, r) => s + r.studioViews, 0) / rows.length;
-
-  const spark = (vals) => { const b = '▁▂▃▄▅▆▇█'; const mx = Math.max(...vals, 1); return vals.map((v) => b[Math.min(7, Math.round((v / mx) * 7))]).join(''); };
-  const studioSpark = spark(rows.map((r) => r.studioViews));
-  const postsSpark = spark(rows.map((r) => r.pubV));
 
   return html`<div class="card card-pad section-gap">
     <div class="card-title">Monthly performance <span class="muted" style=${{ fontWeight: 400 }}>${monthSpan(keys[0], keys[keys.length - 1])}</span></div>
@@ -715,39 +637,84 @@ function MonthlyReport({ contents, followers }) {
         </tbody>
       </table>
     </div>
-    <div class="eng-notes">
-      <div class="note" style=${{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-        <span style=${{ fontFamily: 'monospace', fontSize: '18px', letterSpacing: '2px', color: 'var(--blue-1)' }}>${studioSpark}</span>
-        <span class="muted" style=${{ fontSize: '12px' }}>📺 views in the month (${rows[0].short}→${last.short})</span>
-      </div>
-      <div class="note" style=${{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-        <span style=${{ fontFamily: 'monospace', fontSize: '18px', letterSpacing: '2px', color: 'var(--gold-strong)' }}>${postsSpark}</span>
-        <span class="muted" style=${{ fontSize: '12px' }}>🎬 from that month's posts</span>
-      </div>
+    <${CeilingFloorChart} rows=${rows} />
+  </div>`;
+}
+
+// Ceiling (best post) and floor (middle post) for each month as two lines, with the
+// gap between them shaded. Log scale — each gridline is 10× the one below — so a 3K
+// month and a 4.45M month fit on one chart. Hover a month for its numbers.
+function CeilingFloorChart({ rows }) {
+  const [hover, setHover] = useState(null);
+  const pts = rows.filter((r) => r.cf);
+  if (pts.length < 2) return '';
+  const W = 720, H = 300, padL = 50, padR = 84, padT = 22, padB = 34;
+  const n = pts.length;
+  const lg = (v) => Math.log10(Math.max(1, v));
+  const lo = Math.floor(Math.min(...pts.map((p) => lg(p.cf.floor))));
+  const hi = Math.max(lo + 1, Math.ceil(Math.max(...pts.map((p) => lg(p.cf.ceiling)))));
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const x = (i) => padL + (i / (n - 1)) * innerW;
+  const y = (v) => padT + innerH * (1 - (lg(v) - lo) / (hi - lo));
+  const band = innerW / (n - 1);
+  const C = '#4b57f5', F = '#c47f1a';
+  const line = (get) => pts.map((p, i) => `${x(i)},${y(get(p))}`).join(' ');
+  const gap = `${line((p) => p.cf.ceiling)} ${pts.map((p, i) => `${x(i)},${y(p.cf.floor)}`).reverse().join(' ')}`;
+  const tick = (k) => compact(Math.pow(10, k));
+  const xLabel = (p, i) => (i === 0 || p.key.endsWith('-01') ? `${p.short} ${p.key.slice(2, 4)}` : p.short);
+  const last = pts[n - 1];
+
+  let tip = null;
+  if (hover != null) {
+    const p = pts[hover];
+    const t = (p.cf.ceilingPost.title || '(untitled)').trim();
+    const lines = [
+      `${p.m.label} ${p.key.slice(0, 4)}`,
+      `Ceiling  ${withThousands(p.cf.ceiling)}`,
+      `  “${t.length > 30 ? t.slice(0, 30) + '…' : t}”`,
+      `Floor  ${withThousands(p.cf.floor)}`,
+      `${p.posts} ${p.posts === 1 ? 'post' : 'posts'} · best is ${Math.round(p.cf.ceiling / Math.max(1, p.cf.floor))}× the middle`,
+    ];
+    const boxW = Math.max(...lines.map((l) => l.length)) * 6 + 18, boxH = lines.length * 14 + 10;
+    let bx = x(hover) + 12;
+    if (bx + boxW > W - 4) bx = x(hover) - boxW - 12;
+    tip = { lines, boxW, boxH, bx, by: padT + 2 };
+  }
+
+  return html`<div style=${{ marginTop: '18px', paddingTop: '14px', borderTop: '1px solid var(--border-2)' }}>
+    <div class="chart-head" style=${{ marginBottom: '2px' }}>
+      <div class="card-title" style=${{ fontSize: '13.5px' }}>Ceiling & floor, month by month</div>
     </div>
-    <div class="eng-notes">
-      <div class="note">📺 <strong>Views in the month</strong> — TikTok Studio's figure: views during the month across <em>all</em> your videos. <em>"How much reach did we get?"</em></div>
-      <div class="note">🎬 <strong>From that month's posts</strong> — all-time views of the videos you <em>published</em> that month. <em>"How good was that month's content?"</em></div>
-      <div class="note">🏔️ <strong>Ceiling</strong> — the views of the <em>best</em> video posted that month. <em>"How big can one video pop?"</em></div>
-      <div class="note">🪵 <strong>Floor</strong> — the views of the <em>middle</em> video posted that month (half did better, half did worse). <em>"What does a normal video get?"</em> Each video counts in the month it was <em>posted</em>, even if its views came later.</div>
+    <div class="tgt-legend">
+      <span><i style=${{ borderTop: `2.5px solid ${C}` }}></i>Ceiling — best video</span>
+      <span><i style=${{ borderTop: `2px dashed ${F}` }}></i>Floor — middle video</span>
+      <span class="muted">Log scale: each line up is 10×. Hover a month for details.</span>
     </div>
-    ${latest ? html`<div class="eng-notes" style=${{ borderLeft: '3px solid var(--blue-1)' }}>
-      <div class="eng-notes-title">🏔️ Ceiling & floor</div>
-      <div class="note"><strong>${latest.label}:</strong> ceiling <strong>${compact(latest.cf.ceiling)}</strong> (“${clipT(latest.cf.ceilingPost.title, 44)}”)${prevCf ? html`, vs ${compact(prevCf.ceiling)} the month before` : ''} · floor <strong>${compact(latest.cf.floor)}</strong>${prevCf ? html`, vs ${compact(prevCf.floor)}` : ''}.</div>
-      ${cfVerdict ? html`<div class="note">${cfVerdict}</div>` : ''}
-      ${allTime ? html`<div class="note">🚀 <strong>All-time ceiling: ${compact(allTime.ceiling)}</strong> — “${clipT(allTime.ceilingPost.title, 44)}”${allTimeWhen ? ` (${allTimeWhen.toLocaleString('en-US', { month: 'short', year: 'numeric' })})` : ''}. Proof the account can reach this — the monthly ceiling shows how close each month got.</div>` : ''}
-      <div class="note">📏 Score a month by <strong>“did we land one big video?”</strong> (the ceiling), not just how many we posted — while keeping the floor from sliding.</div>
-    </div>` : ''}
-    <div class="eng-notes" style=${{ borderLeft: '3px solid var(--gold-strong)' }}>
-      <div class="note">🚀 <strong>${peak.short} was your biggest month${peak.studioViews >= 2 * avgViews ? ' by far' : ''}</strong> — ${compact(peak.studioViews)} views, <strong>${(peak.studioViews / avgViews).toFixed(1)}× your monthly average</strong>${last.m.complete ? '' : `; ${last.short} is at ${compact(last.studioViews)} so far`}.</div>
-      ${(() => {
-        const fAt = followersAt(keys[rows.indexOf(peak)]);
-        const base = fAt || followers;
-        if (!base) return '';
-        const fy = Number(ts['For You']) || 0;
-        return html`<div class="note">🎯 <strong>Reach:</strong> ${peak.short}'s ${compact(peak.studioViews)} views were <strong>${Math.round(peak.studioViews / base)}×</strong> the ${withThousands(base)} followers you had ${fAt ? 'then' : 'now'}${fy >= 60 ? html` — with For You bringing ${fy}% of views, most reach comes from people who don't follow you yet` : ''}.</div>`;
-      })()}
-      <div class="note">📡 <strong>Traffic source (overall):</strong> For You <strong>${ts['For You']}%</strong> · Profile ${ts['Personal profile']}% · Search ${ts['Search']}%.</div>
+    <div class="chart-wrap">
+      <svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" style=${{ minWidth: '520px' }}
+        role="img" aria-label="Ceiling and floor views for each month, log scale">
+        ${Array.from({ length: hi - lo + 1 }, (_, i) => lo + i).map((k) => html`<g>
+          <line x1=${padL} y1=${y(Math.pow(10, k))} x2=${W - padR} y2=${y(Math.pow(10, k))} stroke="#eef1f8" stroke-width="1" />
+          <text x=${padL - 8} y=${y(Math.pow(10, k)) + 4} text-anchor="end" font-size="11" fill="#9aa2b1">${tick(k)}</text>
+        </g>`)}
+        ${pts.map((p, i) => html`<text x=${x(i)} y=${H - 12} text-anchor="middle" font-size="11" fill=${hover === i ? '#1f2430' : '#9aa2b1'} font-weight=${hover === i ? 700 : 400}>${xLabel(p, i)}</text>`)}
+        <polygon points=${gap} fill="rgba(75,87,245,.07)" />
+        <polyline points=${line((p) => p.cf.floor)} fill="none" stroke=${F} stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round" />
+        <polyline points=${line((p) => p.cf.ceiling)} fill="none" stroke=${C} stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
+        ${pts.map((p, i) => html`<g>
+          <circle cx=${x(i)} cy=${y(p.cf.floor)} r=${hover === i ? 4.5 : 3} fill=${F} />
+          <circle cx=${x(i)} cy=${y(p.cf.ceiling)} r=${hover === i ? 5 : 3.5} fill=${C} />
+        </g>`)}
+        <text x=${x(n - 1) + 8} y=${y(last.cf.ceiling) + 4} font-size="11" font-weight="700" fill=${C}>${compact(last.cf.ceiling)}</text>
+        <text x=${x(n - 1) + 8} y=${y(last.cf.floor) + 4} font-size="11" font-weight="700" fill=${F}>${compact(last.cf.floor)}</text>
+        ${hover != null ? html`<g>
+          <line x1=${x(hover)} y1=${padT} x2=${x(hover)} y2=${padT + innerH} stroke="#c7ccf7" stroke-width="1" stroke-dasharray="3 3" />
+          <rect x=${tip.bx} y=${tip.by} width=${tip.boxW} height=${tip.boxH} rx="6" fill="#1f2430" opacity="0.96" />
+          ${tip.lines.map((l, i) => html`<text x=${tip.bx + 9} y=${tip.by + 17 + i * 14} font-size=${i ? 10.5 : 10} font-weight=${i === 1 || i === 3 ? 700 : 400} fill=${i === 0 || i === 2 || i === 4 ? '#c7ccf7' : '#fff'}>${l}</text>`)}
+        </g>` : ''}
+        ${pts.map((p, i) => html`<rect x=${x(i) - band / 2} y=${padT} width=${band} height=${innerH} fill="transparent"
+          style=${{ cursor: 'pointer' }} onMouseEnter=${() => setHover(i)} onMouseLeave=${() => setHover(null)} />`)}
+      </svg>
     </div>
   </div>`;
 }
