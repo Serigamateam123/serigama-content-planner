@@ -2,14 +2,19 @@ import { html } from '../lib/html.js';
 import { useState } from 'preact/hooks';
 import { Icon } from '../components/ui.js';
 import { readKV, writeKV } from '../lib/kv.js';
-import { engagementOf, followerGrowth, withThousands } from '../lib/metrics.js';
-import { startOfMonth, parse } from '../lib/date.js';
+import { engagementOf, followerSeries, withThousands } from '../lib/metrics.js';
+import { startOfMonth, startOfDay, parse, shortDate } from '../lib/date.js';
 
-// Monthly goals with pace: are we ahead of or behind where we should be today?
+// Goals with pace: are we ahead of or behind where we should be? Goals are set per
+// month; the card measures them over whatever period it's given (the Monthly
+// Report's selected range), scaling the targets when the period isn't a month.
 // Stored in app_kv `serigama.goals`. The views goal is also mirrored to the older
 // `serigama.goal.views` key so nothing that still reads it breaks.
 const KEY = 'serigama.goals';
 const LEGACY_VIEWS_KEY = 'serigama.goal.views';
+const DAY = 86400000;
+const AVG_MONTH_DAYS = 30.44;
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 export function readGoals() {
   const g = readKV(KEY, {}) || {};
@@ -17,48 +22,82 @@ export function readGoals() {
   return g;
 }
 
-// This month's actuals for each goal. Exported so saved reports can reuse it.
-export function monthActuals(contents, accountStats, now = new Date()) {
-  const start = startOfMonth(now);
+const endOfDay = (d) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
+
+// The window goals are measured over, from a selected {from, to} (Dates or null):
+// - no range (all time) -> the current month;
+// - starts on the 1st and ends in the same month ("This month", "September",
+//   1–30 Sep) -> that whole month, so the full monthly goal applies;
+// - anything else -> exactly those days, with monthly goals scaled to its length.
+export function goalWindow(from, to, now = new Date()) {
+  if (!from) { from = startOfMonth(now); to = now; }
+  to = to || now;
+  const monthEnd = new Date(from.getFullYear(), from.getMonth() + 1, 0);
+  const wholeMonth = from.getDate() === 1 && to.getFullYear() === from.getFullYear() && to.getMonth() === from.getMonth();
+  const start = startOfDay(from);
+  const end = endOfDay(wholeMonth ? monthEnd : to);
+  const days = Math.max(1, Math.round((end - start) / DAY));
+  // Days gone so far, counting today in full (a finished period = all of it).
+  const gone = now < start ? 0 : Math.min(days, Math.floor((Math.min(now, end) - start) / DAY) + 1);
+  return {
+    start, end, days, wholeMonth,
+    scale: wholeMonth ? 1 : days / AVG_MONTH_DAYS,
+    elapsed: gone / days,
+    dayNo: gone,
+    finished: now > end,
+    label: wholeMonth ? `${MONTHS[start.getMonth()]} ${start.getFullYear()}` : `${shortDate(start)} – ${shortDate(end)}`,
+  };
+}
+
+// Actuals inside a window: posts published in it, their views/engagement, and
+// net followers (Studio's monthly figure for a whole month, else daily snapshots).
+export function windowActuals(contents, accountStats, w) {
   let views = 0, eng = 0, posts = 0;
   for (const c of contents || []) {
     if (c.status !== 'published') continue;
     const d = parse(c.published_at);
-    if (!d || d < start) continue;
+    if (!d || d < w.start || d > w.end) continue;
     posts++;
     if (c.metrics) { views += Number(c.metrics.views) || 0; eng += engagementOf(c.metrics); }
   }
-  // Followers: the Studio-captured monthly figure wins; otherwise the daily snapshots.
-  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const mfoll = readKV('serigama.monthlyfollowers', null);
-  let followers = mfoll && mfoll[ym] != null ? Number(mfoll[ym]) : null;
+  let followers = null;
+  if (w.wholeMonth) {
+    const ym = `${w.start.getFullYear()}-${String(w.start.getMonth() + 1).padStart(2, '0')}`;
+    const mfoll = readKV('serigama.monthlyfollowers', null);
+    if (mfoll && mfoll[ym] != null) followers = Number(mfoll[ym]);
+  }
   if (followers == null) {
-    const fg = followerGrowth(accountStats, { from: start, to: now });
-    if (fg && fg.days >= 2) followers = fg.gained;
+    const pts = followerSeries(accountStats).filter((p) => { const d = parse(p.day); return d >= w.start && d <= w.end; });
+    if (pts.length >= 2) followers = pts[pts.length - 1].followers - pts[0].followers;
   }
   return { views, posts, followers, er: views ? Math.round((eng / views) * 1000) / 10 : null };
 }
 
-export function GoalsCard({ contents, accountStats }) {
+// `period` = { from, to } Dates from the page's range picker (omit for this month).
+// `actuals` = the page's own figures for that range ({ views, posts, er, followers });
+// any given (non-null) value replaces ours, so the card always agrees with the page.
+export function GoalsCard({ contents, accountStats, period, actuals }) {
   const [goals, setGoals] = useState(readGoals);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({});
   const [err, setErr] = useState('');
 
   const now = new Date();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const elapsed = now.getDate() / daysInMonth;
-  const act = monthActuals(contents, accountStats, now);
-  const postsTarget = goals.postsPerWeek ? Math.round((goals.postsPerWeek * daysInMonth) / 7) : 0;
+  const w = goalWindow(period && period.from, period && period.to, now);
+  const act = windowActuals(contents, accountStats, w);
+  for (const [k, v] of Object.entries(actuals || {})) if (v != null) act[k] = v;
+  const target = (monthly) => (monthly ? Math.round(monthly * w.scale) : 0);
+  const postsTarget = goals.postsPerWeek ? Math.round((goals.postsPerWeek * w.days) / 7) : 0;
+  const when = w.wholeMonth ? 'this month' : 'this period';
 
   const rows = [
-    { key: 'views', label: 'Views', target: goals.views, cur: act.views, fmt: withThousands, pace: true },
+    { key: 'views', label: 'Views', target: target(goals.views), cur: act.views, fmt: withThousands, pace: true },
     { key: 'posts', label: 'Posts published', target: postsTarget, cur: act.posts, fmt: String, pace: true,
       note: goals.postsPerWeek ? `${goals.postsPerWeek} / week` : '' },
-    { key: 'followers', label: 'New followers', target: goals.followers, cur: act.followers, fmt: (n) => (n < 0 ? '' : '+') + withThousands(n), pace: true,
-      empty: 'No follower figure for this month yet — it appears after the next Studio capture or daily sync.' },
+    { key: 'followers', label: 'New followers', target: target(goals.followers), cur: act.followers, fmt: (n) => (n < 0 ? '' : '+') + withThousands(n), pace: true,
+      empty: `No follower figure for ${when} yet — it appears after a Studio capture or daily sync.` },
     { key: 'er', label: 'Engagement rate', target: goals.er, cur: act.er, fmt: (n) => n + '%', pace: false,
-      empty: 'No published posts with numbers this month yet.' },
+      empty: `No published posts with numbers ${when}.` },
   ];
   const anySet = rows.some((r) => r.target);
 
@@ -83,7 +122,7 @@ export function GoalsCard({ contents, accountStats }) {
 
   return html`<div class="card card-pad section-gap">
     <div style=${{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div class="card-title"><${Icon} name="target" size=${15} /> Monthly goals <span class="muted" style=${{ fontWeight: 400 }}>— ${now.toLocaleString('en-US', { month: 'long', year: 'numeric' })}, day ${now.getDate()} of ${daysInMonth}</span></div>
+      <div class="card-title"><${Icon} name="target" size=${15} /> Goals <span class="muted" style=${{ fontWeight: 400 }}>— ${w.label}${w.finished ? ' (finished)' : w.dayNo ? `, day ${w.dayNo} of ${w.days}` : ' (not started)'}${w.wholeMonth ? '' : ` · monthly goals scaled to ${w.days} ${w.days === 1 ? 'day' : 'days'}`}</span></div>
       ${editing ? '' : html`<button class="btn btn-sm no-print" onClick=${startEdit}>${anySet ? 'Edit goals' : 'Set goals'}</button>`}
     </div>
 
@@ -112,17 +151,22 @@ export function GoalsCard({ contents, accountStats }) {
               </div>`;
             }
             const pct = Math.max(0, Math.min(100, Math.round((cur / r.target) * 100)));
-            const onTrack = r.pace ? cur >= r.target * elapsed : cur >= r.target;
-            const projected = r.pace && elapsed ? Math.round(cur / elapsed) : null;
+            const live = r.pace && !w.finished && w.elapsed < 1; // still running: judge by pace
+            const onTrack = live ? cur >= r.target * w.elapsed : cur >= r.target;
+            const projected = live && w.elapsed ? Math.round(cur / w.elapsed) : null;
             return html`<div class="goal">
               <div class="goal-head">
                 <span>${r.label}${r.note ? html` <span class="muted" style=${{ fontWeight: 400 }}>(${r.note})</span>` : ''}</span>
-                <span style=${{ color: onTrack ? '#0f7a4d' : '#b4232a', fontWeight: 600 }}>${onTrack ? (r.pace ? 'On track' : 'Hitting it') : (r.pace ? 'Behind pace' : 'Below target')}</span>
+                <span style=${{ color: onTrack ? '#0f7a4d' : '#b4232a', fontWeight: 600 }}>${live ? (onTrack ? 'On track' : 'Behind pace') : (onTrack ? 'Goal met' : 'Below goal')}</span>
               </div>
               <div class="goal-num"><strong>${r.fmt(cur)}</strong> <span class="muted">of ${r.fmt(r.target)}</span></div>
               <div class="progress"><i style=${{ width: Math.max(2, pct) + '%', background: onTrack ? 'var(--green)' : 'var(--amber)' }}></i></div>
               <div class="muted" style=${{ fontSize: '11.5px', marginTop: '5px' }}>
-                ${r.pace ? `At this pace: ~${r.fmt(projected)} by month end` : `${cur >= r.target ? '▲' : '▼'} ${Math.abs(Math.round((cur - r.target) * 10) / 10)} pts vs target`}
+                ${!r.pace
+                  ? `${cur >= r.target ? '▲' : '▼'} ${Math.abs(Math.round((cur - r.target) * 10) / 10)} pts vs goal`
+                  : live
+                  ? `At this pace: ~${r.fmt(projected)} by the end of ${w.wholeMonth ? 'the month' : 'the period'}`
+                  : `${Math.round((cur / r.target) * 100)}% of goal${w.finished ? ' — final' : ''}`}
               </div>
             </div>`;
           })}

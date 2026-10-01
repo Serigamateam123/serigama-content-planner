@@ -1,8 +1,11 @@
 import { html } from '../lib/html.js';
 import { useState } from 'preact/hooks';
-import { Kpi, Progress, Badge, Platform, Icon, Empty } from '../components/ui.js';
+import { Kpi, Badge, Platform, Icon, Empty } from '../components/ui.js';
 import { dashboard, erOf, compact } from '../lib/metrics.js';
-import { STATUS_LABEL } from '../lib/constants.js';
+import { STATUS_LABEL, FUNNELS } from '../lib/constants.js';
+
+// "🛒 Bottom Funnel · " prefix for a post's meta line (empty when untagged).
+const funnelTag = (c) => { const f = FUNNELS.find((x) => x.id === c.funnel_stage); return f ? `${f.emoji} ${f.name} · ` : ''; };
 import { longDate, shortMonth, shortDate, parse, startOfDay, addDays, startOfMonth, endOfMonth, startOfWeek } from '../lib/date.js';
 
 const RANGES = [
@@ -39,7 +42,7 @@ function cmpChip(label, delta, unit) {
   return html`<span class=${'cmp-chip ' + cls}>${label} ${arrow} ${val}</span>`;
 }
 
-export function Dashboard({ contents, campaigns, config, onNew, onOpen, onNavigate, onRefresh }) {
+export function Dashboard({ contents, config, onNew, onOpen, onNavigate, onRefresh }) {
   const now = new Date();
   const hour = now.getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
@@ -47,7 +50,7 @@ export function Dashboard({ contents, campaigns, config, onNew, onOpen, onNaviga
   // A single date-range filter drives every tile, so the overview stays consistent.
   const [rangeKey, setRangeKey] = useState('month');
   const rangeLabel = (RANGES.find((r) => r.key === rangeKey) || {}).label || '';
-  const d = dashboard(contents, campaigns, now, rangeFor(rangeKey, now));
+  const d = dashboard(contents, now, rangeFor(rangeKey, now));
 
   // Clickable KPI tiles: clicking one highlights it (yellow) and lists its content below.
   const [sel, setSel] = useState(null);
@@ -151,14 +154,12 @@ export function Dashboard({ contents, campaigns, config, onNew, onOpen, onNaviga
               </div>`
             : html`<div class="list">
                 ${selList.map((c) => {
-                  const cam = campaigns.find((x) => x.id === c.campaign_id);
                   const dt = parse(c.scheduled_at || c.published_at);
                   return html`<div class="sched-item" style=${{ cursor: 'pointer' }} onClick=${() => onOpen(c)}>
                     <div class="sched-main">
                       <div class="sched-title">${c.title}</div>
                       <div class="sched-meta">
-                        ${cam ? html`<span class="dot" style=${{ background: cam.color }}></span>${cam.name} · ` : ''}
-                        <${Platform} id=${c.platform} />${dt ? ' · ' + shortDate(dt) : ''}
+                        ${funnelTag(c)}<${Platform} id=${c.platform} />${dt ? ' · ' + shortDate(dt) : ''}
                         ${c.metrics
                           ? html` · <b>${compact(Number(c.metrics.views) || 0)}</b> views · ${Math.round(erOf(c.metrics) * 10) / 10}% ER`
                           : ''}
@@ -214,8 +215,7 @@ export function Dashboard({ contents, campaigns, config, onNew, onOpen, onNaviga
         : ''}
     </div>
 
-    <div class="grid-2 section-gap">
-      <div class="card card-pad">
+    <div class="card card-pad section-gap">
         <div style=${{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
           <div class="card-title">Next 7 days</div>
           <button class="btn btn-ghost btn-sm" onClick=${() => onNavigate('calendar')}>View all</button>
@@ -224,7 +224,6 @@ export function Dashboard({ contents, campaigns, config, onNew, onOpen, onNaviga
           ? html`<${Empty} title="Nothing scheduled">Add content and set a date to see it here.</${Empty}>`
           : html`<div class="list">
               ${d.next7.map((c) => {
-                const cam = campaigns.find((x) => x.id === c.campaign_id);
                 const dt = parse(c.scheduled_at);
                 return html`<div class="sched-item" onClick=${() => onOpen(c)} style=${{ cursor: 'pointer' }}>
                   <div class="sched-date">
@@ -234,31 +233,13 @@ export function Dashboard({ contents, campaigns, config, onNew, onOpen, onNaviga
                   <div class="sched-main">
                     <div class="sched-title">${c.title}</div>
                     <div class="sched-meta">
-                      ${cam ? html`<span class="dot" style=${{ background: cam.color }}></span>${cam.name} ·` : ''}
-                      <${Platform} id=${c.platform} />
+                      ${funnelTag(c)}<${Platform} id=${c.platform} />${c.assignee ? html` · 👤 ${c.assignee}` : ''}
                     </div>
                   </div>
                   <${Badge} status=${c.status} />
                 </div>`;
               })}
             </div>`}
-      </div>
-
-      <div class="card card-pad">
-        <div class="card-title" style=${{ marginBottom: '6px' }}>Campaign progress</div>
-        ${d.campaignProgress.length === 0
-          ? html`<${Empty} title="No campaigns yet">Create a campaign to track its progress.</${Empty}>`
-          : d.campaignProgress.map(
-              (p) => html`<div style=${{ padding: '9px 0' }}>
-                <div class="progress-row" style=${{ padding: 0 }}>
-                  <span class="dot" style=${{ background: p.campaign.color }}></span>
-                  <span class="progress-name">${p.campaign.name}</span>
-                  <span class="progress-count">${p.done}/${p.target}</span>
-                </div>
-                <${Progress} pct=${p.pct} color=${p.campaign.color} />
-              </div>`
-            )}
-      </div>
     </div>
   </div>`;
 }

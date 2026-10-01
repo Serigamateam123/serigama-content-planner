@@ -28,7 +28,7 @@ function erTag(er) {
   const r = erRank(er);
   return html`<span style=${{ color: r.color, fontWeight: 600, whiteSpace: 'nowrap' }}>${r.emoji} ${r.word}</span>`;
 }
-import { PLATFORMS, PLATFORM_LABEL } from '../lib/constants.js';
+import { PLATFORMS, PLATFORM_LABEL, FUNNELS } from '../lib/constants.js';
 import { shortDate, dayKey, addDays, startOfDay, startOfMonth, parse } from '../lib/date.js';
 
 const RANGE_PRESETS = [
@@ -40,8 +40,8 @@ const RANGE_PRESETS = [
   { key: 'all', label: 'All time' },
 ];
 
-export function Analytics({ contents, campaigns, accounts, accountStats, metricsHistory, onSaveMetrics }) {
-  const DEFAULTS = { campaign_id: 'all', account_id: 'all', platform: 'all', hashtag: '', from: dayKey(startOfMonth(new Date())), to: dayKey(new Date()), grain: 'monthly', preset: 'month' };
+export function Analytics({ contents, accounts, accountStats, metricsHistory, onSaveMetrics }) {
+  const DEFAULTS = { funnel: 'all', account_id: 'all', platform: 'all', hashtag: '', from: dayKey(startOfMonth(new Date())), to: dayKey(new Date()), grain: 'monthly', preset: 'month' };
   // `f` = the filters currently APPLIED to the results. `draft` = what the user is
   // editing in the filter bar. Nothing filters until they press Search (setF(draft)).
   const [f, setF] = useState(DEFAULTS);
@@ -74,7 +74,7 @@ export function Analytics({ contents, campaigns, accounts, accountStats, metrics
   const pickHashtag = (tag) => { const h = (s) => ({ ...s, hashtag: s.hashtag === tag ? '' : tag }); setF(h); setDraft(h); };
   const dirty = JSON.stringify(draft) !== JSON.stringify(f);
 
-  const a = analytics(contents, campaigns, f, accountStats || []);
+  const a = analytics(contents, f, accountStats || []);
   const publishedAll = contents.filter((c) => c.status === 'published');
 
   const rangeMode = measure === 'range' && histDays >= 2;
@@ -133,10 +133,11 @@ export function Analytics({ contents, campaigns, accounts, accountStats, metrics
     <div class="card card-pad">
       <div class="filters">
         <div class="field">
-          <label>Campaign</label>
-          <select value=${draft.campaign_id} onChange=${dset('campaign_id')}>
-            <option value="all">All campaigns</option>
-            ${campaigns.map((c) => html`<option value=${c.id}>${c.name}</option>`)}
+          <label>Funnel stage</label>
+          <select value=${draft.funnel} onChange=${dset('funnel')}>
+            <option value="all">All funnel stages</option>
+            ${FUNNELS.map((fu) => html`<option value=${fu.id}>${fu.emoji} ${fu.name}</option>`)}
+            <option value="none">Not tagged</option>
           </select>
         </div>
         <div class="field">
@@ -175,12 +176,11 @@ export function Analytics({ contents, campaigns, accounts, accountStats, metrics
         : ''}
     </div>
 
-    ${f.campaign_id !== 'all' && a.publishedCount === 0
+    ${f.funnel !== 'all' && a.publishedCount === 0
       ? html`<div class="card card-pad section-gap" style=${{ borderLeft: '3px solid var(--amber)' }}>
-          <strong>No published posts with numbers in this campaign.</strong>
+          <strong>No published posts with numbers ${f.funnel === 'none' ? 'are untagged' : 'are tagged with this funnel stage'} in this range.</strong>
           <div class="muted" style=${{ fontSize: '12.5px', marginTop: '4px' }}>
-            Auto-synced TikTok posts aren't linked to a campaign — TikTok doesn't know your campaign names.
-            To report on a topic across your synced posts, use <strong>Top hashtags</strong> below instead.
+            Open a post from the Calendar or Dashboard and set its <strong>Funnel stage</strong> to include it here.
           </div>
         </div>`
       : ''}

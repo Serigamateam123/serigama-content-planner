@@ -23,8 +23,23 @@ const PRESETS = [
   { key: 'all', label: 'All time' },
 ];
 
+// The 12 months before this one, newest first, as "m:YYYY-MM" range keys.
+function pastMonths(now) {
+  return Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 1 - i, 1);
+    return { key: `m:${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, label: `${MONTHS_FULL[d.getMonth()]} ${d.getFullYear()}` };
+  });
+}
+
+// "YYYY-MM-DD" -> local midnight (new Date('YYYY-MM-DD') would be UTC midnight).
+const localDay = (k) => { if (!k) return null; const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
+
 function rangeFor(key, now) {
   const to = dayKey(now);
+  if (key.startsWith('m:')) {
+    const [y, m] = key.slice(2).split('-').map(Number);
+    return { from: dayKey(new Date(y, m - 1, 1)), to: dayKey(new Date(y, m, 0)), label: MONTHS_FULL[m - 1] + ' ' + y };
+  }
   if (key === '7') return { from: dayKey(addDays(startOfDay(now), -6)), to, label: 'Last 7 days' };
   if (key === '28') return { from: dayKey(addDays(startOfDay(now), -27)), to, label: 'Last 28 days' };
   if (key === '90') return { from: dayKey(addDays(startOfDay(now), -89)), to, label: 'Last 90 days' };
@@ -35,7 +50,7 @@ function rangeFor(key, now) {
 
 // Clean, single-screen executive board. Every number follows the chosen time range
 // (preset or custom dates); audience + best-month highlights come from Studio captures.
-export function AnalyticsDashboard({ contents, campaigns, accounts, accountStats, onNavigate, onRefresh }) {
+export function AnalyticsDashboard({ contents, accountStats, onNavigate, onRefresh }) {
   const now = new Date();
   const monthDefault = rangeFor('month', now);
   const [rangeKey, setRangeKey] = useState('month');
@@ -49,7 +64,7 @@ export function AnalyticsDashboard({ contents, campaigns, accounts, accountStats
     ? { from: cFrom || '', to: cTo || dayKey(now), label: cFrom && cTo ? `${shortDate(cFrom)} – ${shortDate(cTo)}` : (cFrom ? `since ${shortDate(cFrom)}` : 'Custom range') }
     : rangeFor(rangeKey, now);
 
-  const at = (from, to) => analytics(contents, campaigns, { campaign_id: 'all', account_id: 'all', platform: 'all', from, to }, accountStats || []);
+  const at = (from, to) => analytics(contents, { account_id: 'all', platform: 'all', from, to }, accountStats || []);
   const a = at(r.from, r.to);
 
   // Previous equal-length period, for the ▲/▼ "vs prev" comparison (bounded ranges only).
@@ -182,6 +197,9 @@ export function AnalyticsDashboard({ contents, campaigns, accounts, accountStats
           <label>Time range</label>
           <select value=${rangeKey} onChange=${(e) => { const k = e.target.value; setRangeKey(k); if (k === 'all') { setCFrom(''); setCTo(''); } else if (k !== 'custom') { const rr = rangeFor(k, now); setCFrom(rr.from); setCTo(rr.to); } }}>
             ${PRESETS.map((p) => html`<option value=${p.key}>${p.label}</option>`)}
+            <optgroup label="Pick a month">
+              ${pastMonths(now).map((p) => html`<option value=${p.key}>${p.label}</option>`)}
+            </optgroup>
             <option value="custom">Custom range…</option>
           </select>
         </div>
@@ -200,7 +218,9 @@ export function AnalyticsDashboard({ contents, campaigns, accounts, accountStats
       </div>
     </div>
 
-    <${GoalsCard} contents=${contents} accountStats=${accountStats} />
+    <${GoalsCard} contents=${contents} accountStats=${accountStats}
+      period=${r.from ? { from: localDay(r.from), to: localDay(r.to) } : null}
+      actuals=${r.from ? { views: a.totalViews, posts: a.publishedCount, er: a.publishedCount ? a.avgER : null, followers: follInRange } : null} />
 
     ${a.publishedCount === 0
       ? html`<div class="card card-pad section-gap"><${Empty} title="No posts in this range">Pick a wider time range, or connect TikTok to pull metrics.</${Empty}></div>`

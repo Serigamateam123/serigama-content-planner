@@ -7,14 +7,15 @@ import { monthMatrix, monthYear, isSameDay, isSameMonth, dayKey, time, addDays, 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DEFAULT_HOUR = 10; // time given to a backlog post dropped onto a day
 
-export function Calendar({ contents, campaigns, onNew, onOpen, onNewOnDate, onReschedule }) {
+export function Calendar({ contents, onNew, onOpen, onNewOnDate, onReschedule }) {
   const [cursor, setCursor] = useState(new Date());
   const [view, setView] = useState('month');
   // status 'active' = everything except taken-down posts (the default).
   const [filters, setFilters] = useState({ platform: 'all', status: 'active', funnel: 'all' });
   const [dragId, setDragId] = useState(null);
   const [overKey, setOverKey] = useState(null); // day (or 'backlog') being dragged over
-  const campColor = (id) => (campaigns.find((c) => c.id === id) || {}).color || 'var(--muted-2)';
+  // Card edge colour = the post's funnel stage (grey when untagged).
+  const funnelColor = (id) => (FUNNELS.find((f) => f.id === id) || {}).accent || 'var(--muted-2)';
   const setF = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
 
   const visible = contents.filter((c) => {
@@ -79,7 +80,7 @@ export function Calendar({ contents, campaigns, onNew, onOpen, onNewOnDate, onRe
   };
 
   const eventEl = (c) => html`<div class=${'cal-event' + (c.id === dragId ? ' dragging' : '') + (c.status === 'takedown' ? ' is-takedown' : '')}
-    style=${{ borderLeftColor: campColor(c.campaign_id) }}
+    style=${{ borderLeftColor: funnelColor(c.funnel_stage) }}
     title=${canDrag(c) ? 'Drag to another day to reschedule' : ''}
     ...${dragProps(c)}
     onClick=${(e) => { e.stopPropagation(); onOpen(c); }}>
@@ -132,7 +133,8 @@ export function Calendar({ contents, campaigns, onNew, onOpen, onNewOnDate, onRe
     </div>
 
     <div class="legend" style=${{ marginBottom: '14px' }}>
-      ${campaigns.map((c) => html`<span class="legend-item"><span class="dot" style=${{ background: c.color }}></span>${c.name}</span>`)}
+      ${FUNNELS.map((f) => html`<span class="legend-item"><span class="dot" style=${{ background: f.accent }}></span>${f.name}</span>`)}
+      <span class="legend-item"><span class="dot" style=${{ background: 'var(--muted-2)' }}></span>Not tagged</span>
     </div>
 
     ${backlog.length > 0 || dragId
@@ -143,7 +145,7 @@ export function Calendar({ contents, campaigns, onNew, onOpen, onNewOnDate, onRe
           </div>
           <div class="backlog-strip">
             ${backlog.map(
-              (c) => html`<div class=${'chip' + (c.id === dragId ? ' dragging' : '')} style=${{ borderLeftColor: campColor(c.campaign_id) }} ...${dragProps(c)} onClick=${() => onOpen(c)}>
+              (c) => html`<div class=${'chip' + (c.id === dragId ? ' dragging' : '')} style=${{ borderLeftColor: funnelColor(c.funnel_stage) }} ...${dragProps(c)} onClick=${() => onOpen(c)}>
                 <div class="chip-title">${c.title}</div>
                 <div class="chip-meta"><${Badge} status=${c.status} /> <${Platform} id=${c.platform} /></div>
               </div>`

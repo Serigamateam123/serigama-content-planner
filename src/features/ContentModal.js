@@ -10,13 +10,12 @@ const usedValues = (contents, key, extra = []) =>
 
 // Add / edit a piece of content. `content` is null when creating; `prefill` seeds a
 // new post (e.g. "Plan a post" from a Content Funnel inspo clip).
-export function ContentModal({ content, contents, campaigns, accounts, defaultDate, prefill, onSubmit, onDelete, onClose }) {
+export function ContentModal({ content, contents, accounts, defaultDate, prefill, onSubmit, onDelete, onClose }) {
   const c = content || prefill || {};
   const [form, setForm] = useState({
     title: c.title || '',
     platform: c.platform || (PLATFORMS[0] && PLATFORMS[0].id),
     account_id: c.account_id || '',
-    campaign_id: c.campaign_id || '',
     format: c.format || 'feed',
     status: c.status || (defaultDate ? 'scheduled' : 'idea'),
     scheduled_local: toDatetimeLocal(c.scheduled_at) || (defaultDate ? toDatetimeLocal(defaultDate) : ''),
@@ -48,7 +47,6 @@ export function ContentModal({ content, contents, campaigns, accounts, defaultDa
       title: form.title.trim(),
       platform: form.platform,
       account_id: form.account_id || null,
-      campaign_id: form.campaign_id || null,
       format: form.format,
       status: form.status,
       scheduled_at,
@@ -152,21 +150,12 @@ export function ContentModal({ content, contents, campaigns, accounts, defaultDa
       </div>
     </div>
 
-    <div class="field-row">
-      <div class="field">
-        <label>Campaign</label>
-        <select value=${form.campaign_id} onChange=${set('campaign_id')}>
-          <option value="">No campaign</option>
-          ${campaigns.map((cam) => html`<option value=${cam.id}>${cam.name}</option>`)}
-        </select>
-      </div>
-      <div class="field">
-        <label>Account</label>
-        <select value=${form.account_id} onChange=${set('account_id')}>
-          <option value="">—</option>
-          ${accounts.map((a) => html`<option value=${a.id}>${a.display_name || a.handle}</option>`)}
-        </select>
-      </div>
+    <div class="field">
+      <label>Account</label>
+      <select value=${form.account_id} onChange=${set('account_id')}>
+        <option value="">—</option>
+        ${accounts.map((a) => html`<option value=${a.id}>${a.display_name || a.handle}</option>`)}
+      </select>
     </div>
 
     <div class="field">

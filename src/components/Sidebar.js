@@ -5,7 +5,6 @@ const NAV = [
   { section: 'Plan' },
   { id: 'dashboard', label: 'Content Dashboard', icon: 'dashboard' },
   { id: 'calendar', label: 'Content Calendar', icon: 'calendar' },
-  { id: 'campaigns', label: 'Campaigns', icon: 'campaign' },
   { id: 'fundamental', label: 'Content Funnel', icon: 'funnel' },
   { section: 'Report' },
   { id: 'overview', label: 'Monthly Report', icon: 'report' },

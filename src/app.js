@@ -5,7 +5,6 @@ import { store, isCloud, config } from './lib/store.js';
 import { Sidebar } from './components/Sidebar.js';
 import { Dashboard } from './features/Dashboard.js';
 import { Calendar } from './features/Calendar.js';
-import { Campaigns } from './features/Campaigns.js';
 import { Fundamental } from './features/Fundamental.js';
 import { Analytics } from './features/Analytics.js';
 import { AnalyticsDashboard } from './features/AnalyticsDashboard.js';
@@ -13,7 +12,7 @@ import { ContentModal } from './features/ContentModal.js';
 import { Login } from './features/Login.js';
 import { readKV, updateKVEntry } from './lib/kv.js';
 
-const ROUTES = ['dashboard', 'calendar', 'campaigns', 'fundamental', 'overview', 'analytics'];
+const ROUTES = ['dashboard', 'calendar', 'fundamental', 'overview', 'analytics'];
 
 // Planning fields kept per post in app_kv (key `serigama.contentmeta`, map of
 // content id -> fields) rather than as columns, so they work without a database
@@ -82,7 +81,7 @@ function App() {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState(null);
   const [route, setRoute] = useState(routeFromHash());
-  const [data, setData] = useState({ contents: [], campaigns: [], accounts: [], accountStats: [], metricsHistory: [], studioMetrics: [] });
+  const [data, setData] = useState({ contents: [], accounts: [], accountStats: [], metricsHistory: [], studioMetrics: [] });
   const [modal, setModal] = useState(null); // { content, defaultDate, prefill } | null
   const [dataVersion, setDataVersion] = useState(0); // bumps after each load so KV-backed views re-read
   const [loadingData, setLoadingData] = useState(false);
@@ -111,9 +110,8 @@ function App() {
   const loadData = useCallback(async () => {
     setLoadingData(true);
     await syncKV(); // hydrate localStorage-backed figures from Supabase before reading them
-    const [contents, campaigns, accounts, accountStats, metricsHistory, studioMetrics] = await Promise.all([
+    const [contents, accounts, accountStats, metricsHistory, studioMetrics] = await Promise.all([
       store.listContents(),
-      store.listCampaigns(),
       store.listAccounts(),
       store.listAccountStats(),
       store.listMetricsHistory(),
@@ -132,7 +130,7 @@ function App() {
       saves: c.external_id ? Number(savesBy[String(c.external_id)]) || 0 : 0,
       newFollowers: c.external_id && newFollowersBy[String(c.external_id)] != null ? Number(newFollowersBy[String(c.external_id)]) : null,
     }));
-    setData({ contents: withStudio, campaigns, accounts, accountStats, metricsHistory, studioMetrics });
+    setData({ contents: withStudio, accounts, accountStats, metricsHistory, studioMetrics });
     setDataVersion((v) => v + 1);
     setLoadingData(false);
   }, []);
@@ -165,9 +163,6 @@ function App() {
     await loadData();
   };
   const saveMetrics = async (id, m) => { await store.saveMetrics(id, m); await loadData(); };
-  const createCampaign = async (d) => { await store.createCampaign(d); await loadData(); };
-  const updateCampaign = async (id, d) => { await store.updateCampaign(id, d); await loadData(); };
-  const deleteCampaign = async (id) => { await store.deleteCampaign(id); await loadData(); };
 
   const openNew = (defaultDate = null, prefill = null) => setModal({ content: null, defaultDate, prefill });
   const openEdit = (content) => setModal({ content, defaultDate: null, prefill: null });
@@ -177,7 +172,7 @@ function App() {
     onSignIn=${(e) => store.signIn(e)}
     onPasswordSignIn=${(e, p) => store.signInWithPassword(e, p)} />`;
 
-  const { contents, campaigns, accounts, accountStats, metricsHistory } = data;
+  const { contents, accounts, accountStats, metricsHistory } = data;
 
   return html`<div class="app">
     <${Sidebar}
@@ -193,20 +188,17 @@ function App() {
     <main class="main">
       <div class="main-inner">
         ${route === 'dashboard'
-          ? html`<${Dashboard} contents=${contents} campaigns=${campaigns} config=${config}
+          ? html`<${Dashboard} contents=${contents} config=${config}
               onNew=${() => openNew()} onOpen=${openEdit} onNavigate=${navigate} onRefresh=${loadData} />`
           : route === 'calendar'
-          ? html`<${Calendar} contents=${contents} campaigns=${campaigns}
+          ? html`<${Calendar} contents=${contents}
               onNew=${() => openNew()} onOpen=${openEdit} onNewOnDate=${(d) => openNew(d)} onReschedule=${rescheduleContent} />`
-          : route === 'campaigns'
-          ? html`<${Campaigns} contents=${contents} campaigns=${campaigns}
-              onCreate=${createCampaign} onUpdate=${updateCampaign} onDelete=${deleteCampaign} onOpenContent=${openEdit} />`
           : route === 'fundamental'
           ? html`<${Fundamental} contents=${contents} dataVersion=${dataVersion} onPlan=${(prefill) => openNew(null, prefill)} />`
           : route === 'overview'
-          ? html`<${AnalyticsDashboard} contents=${contents} campaigns=${campaigns} accounts=${accounts} accountStats=${accountStats}
+          ? html`<${AnalyticsDashboard} contents=${contents} accounts=${accounts} accountStats=${accountStats}
               onNavigate=${navigate} onRefresh=${loadData} />`
-          : html`<${Analytics} contents=${contents} campaigns=${campaigns} accounts=${accounts} accountStats=${accountStats} metricsHistory=${metricsHistory} onSaveMetrics=${saveMetrics} />`}
+          : html`<${Analytics} contents=${contents} accounts=${accounts} accountStats=${accountStats} metricsHistory=${metricsHistory} onSaveMetrics=${saveMetrics} />`}
       </div>
     </main>
 
@@ -216,7 +208,6 @@ function App() {
           defaultDate=${modal.defaultDate}
           prefill=${modal.prefill}
           contents=${contents}
-          campaigns=${campaigns}
           accounts=${accounts}
           onSubmit=${saveContent}
           onDelete=${deleteContent}

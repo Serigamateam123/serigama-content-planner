@@ -1,20 +1,20 @@
 # Serigama Content Planner
 
-A simple, private planner for your social content — a **calendar**, **campaign tracker**, and
+A simple, private planner for your social content — a **calendar**, **production pipeline**, and
 **performance dashboard** in one page. Built to run with no build tools and no monthly fees.
 
-Six screens, in two groups:
+Five screens, in two groups:
 
 **Plan**
 - **Content Dashboard** — what's due, what needs attention, the production pipeline
-  (Idea → Scripting → Filming → Editing → Ready → Scheduled), and campaign progress.
+  (Idea → Scripting → Filming → Editing → Ready → Scheduled).
 - **Content Calendar** — month/week grid + an unscheduled backlog. Filter by platform, status or
   funnel stage; drag a post to another day to reschedule it.
-- **Campaigns** — group content and track progress toward a target (e.g. 9 of 24 done).
 - **Content Funnel** — an inspiration library by funnel stage; turn any clip into a planned post.
 
 **Report**
-- **Monthly Report** — the one-glance summary for meetings: goals, headline numbers, what kind of
+- **Monthly Report** — the one-glance summary for meetings: pick any month or date range and every
+  number follows it — goals and pace, headline numbers, what kind of
   content works (by funnel stage / pillar / product), and **saved report snapshots**.
 - **Post Performance** — every post's numbers in detail, trends, hashtags, followers, audience.
 
@@ -96,7 +96,7 @@ Site URL / Redirect URLs**, so the email sign-in link brings you back to the rig
   it in the **unscheduled backlog**.
 - **Move it through production:** update the status as you go — Scripting → Filming → Editing →
   Ready → Scheduled. The Dashboard's pipeline shows where everything is and flags anything late.
-- **Mark it done:** set status to **Published** — it then counts toward campaign progress and reports.
+- **Mark it done:** set status to **Published** — it then counts in your reports and goals.
 - **Enter numbers:** on **Post Performance** click **Update numbers** and type each post's reach / views /
   likes / comments / shares. The engagement rate is calculated for you.
 - **Report:** on **Monthly Report** set your monthly goals, then click **Save this report** before a
@@ -127,7 +127,7 @@ src/
   app.js              Root: routing, auth gate, data loading
   lib/                store (local + Supabase), metrics, dates, constants, seed data
   components/         Sidebar + shared UI pieces
-  features/           Dashboard, Calendar, Campaigns, Analytics, ContentModal, Login
+  features/           Dashboard, Calendar, Fundamental (Content Funnel), Goals, AnalyticsDashboard (Monthly Report), Analytics (Post Performance), ContentModal, Login
   styles.css          Design system (blue sidebar, gold accents)
 supabase/
   schema.sql          Run once in Supabase to create the tables + security rules

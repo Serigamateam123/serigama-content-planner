@@ -1,5 +1,5 @@
 // Pure derivations used by the Dashboard and Analytics screens. Everything here
-// takes plain arrays of content/campaigns and returns numbers/objects — no I/O.
+// takes plain arrays of content and returns numbers/objects — no I/O.
 
 import { startOfMonth, endOfMonth, startOfDay, addDays, dayKey, parse, isSameMonth } from './date.js';
 import { PRODUCTION_STATUSES, FUNNELS } from './constants.js';
@@ -153,7 +153,7 @@ export function followersGainedPerVideo(published, stats) {
 
 // --- Dashboard -------------------------------------------------------------
 
-export function dashboard(contents, campaigns, now = new Date(), range = null) {
+export function dashboard(contents, now = new Date(), range = null) {
   // Every date-based tile uses this same range, so the whole overview is consistent.
   const from = range && range.from ? parse(range.from) : null;
   const to = range && range.to ? parse(range.to) : null;
@@ -243,13 +243,6 @@ export function dashboard(contents, campaigns, now = new Date(), range = null) {
     })
     .sort((a, b) => parse(a.scheduled_at) - parse(b.scheduled_at));
 
-  const campaignProgress = campaigns.map((cam) => {
-    const items = contents.filter((c) => c.campaign_id === cam.id);
-    const done = items.filter((c) => c.status === 'published').length;
-    const target = cam.target_count || items.length || 0;
-    return { campaign: cam, done, target, pct: target ? Math.min(100, (done / target) * 100) : 0 };
-  });
-
   return {
     contentThisMonth: thisMonth.length,
     scheduledCount: scheduled.length,
@@ -264,7 +257,6 @@ export function dashboard(contents, campaigns, now = new Date(), range = null) {
     missingCaption,
     actionNeeded: overdue.length + missingCaption.length,
     next7,
-    campaignProgress,
     pipeline: pipelineOf(contents),
   };
 }
@@ -483,7 +475,7 @@ export function periodTrend(history, grain) {
 
 export function applyFilters(contents, f) {
   return contents.filter((c) => {
-    if (f.campaign_id && f.campaign_id !== 'all' && c.campaign_id !== f.campaign_id) return false;
+    if (f.funnel && f.funnel !== 'all' && (f.funnel === 'none' ? c.funnel_stage : c.funnel_stage !== f.funnel)) return false;
     if (f.account_id && f.account_id !== 'all' && c.account_id !== f.account_id) return false;
     if (f.platform && f.platform !== 'all' && c.platform !== f.platform) return false;
     if (f.hashtag && !extractHashtags(c.title).includes(f.hashtag)) return false;
@@ -495,7 +487,7 @@ export function applyFilters(contents, f) {
   });
 }
 
-export function analytics(contents, campaigns, f = {}, stats = []) {
+export function analytics(contents, f = {}, stats = []) {
   const filtered = applyFilters(contents, f);
   const published = filtered.filter((c) => c.status === 'published' && c.metrics);
 
