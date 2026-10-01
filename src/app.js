@@ -202,7 +202,7 @@ function App() {
           ? html`<${AnalyticsDashboard} contents=${contents} accounts=${accounts} accountStats=${accountStats}
               onNavigate=${navigate} onRefresh=${loadData} />`
           : route === 'targets'
-          ? html`<${Targets} metricsHistory=${metricsHistory} />`
+          ? html`<${Targets} contents=${contents} metricsHistory=${metricsHistory} />`
           : html`<${Analytics} contents=${contents} accounts=${accounts} accountStats=${accountStats} metricsHistory=${metricsHistory} onSaveMetrics=${saveMetrics} />`}
       </div>
     </main>

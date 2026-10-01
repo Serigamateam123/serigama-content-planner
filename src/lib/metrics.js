@@ -433,9 +433,36 @@ export function periodMetrics(contents, history, from, to) {
 // EVENLY across every day in the gap, so a day with no snapshot doesn't read 0
 // with the next snapshot day spiking — it plateaus instead (a smoothed estimate
 // for untracked days; becomes exact once daily snapshots run every day).
-export function periodTrend(history, grain) {
+// Pass `contents` so a video posted after tracking began also counts the views it
+// got before its first snapshot (spread from its publish day to that snapshot's
+// day) — otherwise a video that pops on day one is badly undercounted. Videos
+// posted before tracking began are skipped: their first snapshot is lifetime views.
+export function periodTrend(history, grain, contents = null) {
   const byContent = metricsSeries(history);
   const daily = new Map(); // dayKey -> views gained that day (smoothed)
+  const spread = (from, to, total) => {
+    const days = Math.max(0, Math.round((startOfDay(to) - startOfDay(from)) / 86400000));
+    for (let d = 0; d <= days; d++) {
+      const k = dayKey(addDays(startOfDay(from), d));
+      daily.set(k, (daily.get(k) || 0) + total / (days + 1));
+    }
+  };
+  if (contents && byContent.size) {
+    const pubOf = new Map(contents.map((c) => [c.id, parse(c.published_at)]));
+    let firstTracked = null;
+    for (const series of byContent.values()) {
+      const t = parse(series[0].fetched_at);
+      if (t && (!firstTracked || t < firstTracked)) firstTracked = t;
+    }
+    const trackingStart = firstTracked ? startOfDay(firstTracked) : null;
+    for (const [id, series] of byContent) {
+      const pub = pubOf.get(id);
+      const first = series[0];
+      const at = parse(first.fetched_at);
+      const v = Number(first.views) || 0;
+      if (pub && at && trackingStart && v > 0 && startOfDay(pub) >= trackingStart && pub <= at) spread(pub, at, v);
+    }
+  }
   for (const series of byContent.values()) {
     for (let i = 1; i < series.length; i++) {
       const gain = Math.max(0, (Number(series[i].views) || 0) - (Number(series[i - 1].views) || 0));

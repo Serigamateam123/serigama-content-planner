@@ -91,7 +91,7 @@ export function Analytics({ contents, accounts, accountStats, metricsHistory, on
   const from = f.from ? startOfDay(parse(f.from)) : null;
   const to = f.to ? new Date(startOfDay(parse(f.to)).getTime() + 86399999) : null;
   const pm = periodMetrics(scope, history, from, to);
-  const pTrend = periodTrend(history.filter((m) => scopeIds.has(m.content_id)), f.grain || 'monthly');
+  const pTrend = periodTrend(history.filter((m) => scopeIds.has(m.content_id)), f.grain || 'monthly', scope);
 
   // Which figures the KPI row + trend chart show, based on the toggle.
   const kViews = rangeMode ? pm.views : a.totalViews;
@@ -688,7 +688,8 @@ function MonthlyReport({ contents, followers }) {
 
   const rows = keys.map((k) => {
     const m = stored.months[k];
-    return { m, short: m.label.slice(0, 3), label: m.complete ? m.label : `${m.label} (1–${m.days})`, studioViews: m.views, pubV: pubViews(k), posts: pubList(k).length, cf: ceilingFloor(pubList(k)) };
+    const ongoing = k === `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+    return { m, ongoing, short: m.label.slice(0, 3), label: m.complete ? m.label : ongoing ? `${m.label} (1–${m.days} so far)` : `${m.label} — 1–${m.days} only`, studioViews: m.views, pubV: pubViews(k), posts: pubList(k).length, cf: ceilingFloor(pubList(k)) };
   });
   rows.forEach((r, i) => { r.prevCf = i > 0 ? rows[i - 1].cf : null; });
 
@@ -738,7 +739,7 @@ function MonthlyReport({ contents, followers }) {
         <tbody>
           ${rows.map((r) => html`<tr style=${r === peak ? { background: '#fff7e6' } : {}}>
             <td><strong>${r.label}</strong></td>
-            <td>${compact(r.studioViews)}</td>
+            <td>${compact(r.studioViews)}${r.m.complete || r.ongoing ? '' : html`<span class="muted" style=${{ display: 'block', fontSize: '11px' }}>part month — capture full month</span>`}</td>
             <td>${compact(r.pubV)}</td>
             <td>${r.posts}</td>
             <td>${r.cf
