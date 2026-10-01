@@ -158,6 +158,13 @@ export function AnalyticsDashboard({ contents, accountStats, onNavigate, onRefre
     catch (e) { alert('Could not delete — check your connection and try again.'); }
   };
 
+  // Carry the selected period over, so Post Performance opens on the same dates.
+  const PP_PRESETS = ['7', '28', '90', 'month', 'all'];
+  const openPostPerformance = () => {
+    const q = new URLSearchParams({ from: r.from || '', to: r.to || '', preset: PP_PRESETS.includes(rangeKey) ? rangeKey : 'custom' });
+    onNavigate('analytics?' + q.toString());
+  };
+
   if (viewing) return html`<${ReportView} rep=${viewing} onBack=${() => setViewing(null)} onDelete=${() => deleteReport(viewing.id)} />`;
 
   const clip = (t) => { t = (t || '(untitled)').trim(); return t.length > 42 ? t.slice(0, 42) + '…' : t; };
@@ -184,7 +191,7 @@ export function AnalyticsDashboard({ contents, accountStats, onNavigate, onRefre
       </div>
       <div class="page-actions">
         <button class="btn" onClick=${onRefresh}><${Icon} name="refresh" size=${15} /> Refresh</button>
-        <button class="btn" onClick=${() => onNavigate('analytics')}><${Icon} name="analytics" size=${15} /> Post performance</button>
+        <button class="btn" onClick=${openPostPerformance} title=${'Open Post Performance for ' + r.label}><${Icon} name="analytics" size=${15} /> Post performance</button>
         <button class="btn" onClick=${() => window.print()}><${Icon} name="print" size=${15} /> Print / PDF</button>
         <button class="btn btn-gold" onClick=${saveReport} disabled=${a.publishedCount === 0}><${Icon} name="save" size=${15} /> Save this report</button>
       </div>

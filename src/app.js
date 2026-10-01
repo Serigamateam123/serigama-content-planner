@@ -93,7 +93,8 @@ function App() {
     addEventListener('hashchange', onHash);
     return () => removeEventListener('hashchange', onHash);
   }, []);
-  const navigate = (r) => { location.hash = '/' + r; setRoute(r); };
+  // `r` may carry a query (e.g. 'analytics?from=…&to=…') for the page to read on open.
+  const navigate = (r) => { location.hash = '/' + r; setRoute(r.split('?')[0]); };
 
   // --- auth bootstrap ---
   useEffect(() => {

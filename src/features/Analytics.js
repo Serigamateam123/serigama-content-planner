@@ -43,8 +43,14 @@ export function Analytics({ contents, accounts, accountStats, metricsHistory, on
   const DEFAULTS = { funnel: 'all', account_id: 'all', platform: 'all', hashtag: '', from: dayKey(startOfMonth(new Date())), to: dayKey(new Date()), grain: 'monthly', preset: 'month' };
   // `f` = the filters currently APPLIED to the results. `draft` = what the user is
   // editing in the filter bar. Nothing filters until they press Search (setF(draft)).
-  const [f, setF] = useState(DEFAULTS);
-  const [draft, setDraft] = useState(DEFAULTS);
+  // Opened from the Monthly Report's "Post performance" button: start on its period.
+  const initial = () => {
+    const q = new URLSearchParams(location.hash.split('?')[1] || '');
+    if (!q.has('from') && !q.has('to')) return DEFAULTS;
+    return { ...DEFAULTS, from: q.get('from') || '', to: q.get('to') || '', preset: q.get('preset') || 'custom' };
+  };
+  const [f, setF] = useState(initial);
+  const [draft, setDraft] = useState(initial);
   const [showEntry, setShowEntry] = useState(false);
   const [sel, setSel] = useState(null); // which KPI tile is expanded
   const history = metricsHistory || [];
