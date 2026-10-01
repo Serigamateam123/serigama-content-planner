@@ -1,4 +1,5 @@
 import { html } from '../lib/html.js';
+import { useRemembered } from '../lib/remember.js';
 import { useState } from 'preact/hooks';
 import { Icon, Modal } from '../components/ui.js';
 import { readKV, writeKV } from '../lib/kv.js';
@@ -49,7 +50,7 @@ export function targetFor(cfg, ym) {
 
 export function Targets({ contents, metricsHistory }) {
   const [targets, setTargets] = useState(readTargets);
-  const [view, setView] = useState('months'); // 'months' (Jan–Dec, default) | 'pace'
+  const [view, setView] = useRemembered('targets.view', 'months'); // 'months' (Jan–Dec, default) | 'pace'
   const [editing, setEditing] = useState(false);
   const [rowEdit, setRowEdit] = useState(null); // { ym, value }
   const [err, setErr] = useState('');
@@ -60,8 +61,8 @@ export function Targets({ contents, metricsHistory }) {
   const studio = (readKV('serigama.monthly', {}) || {}).months || {};
   const firstTargetYm = [cfg.startMonth, ...Object.keys(cfg.overrides || {})].sort()[0];
   const latestPaceYm = curYm > firstTargetYm ? curYm : firstTargetYm;
-  const [paceYm, setPaceYm] = useState(latestPaceYm);
-  const [year, setYear] = useState(now.getFullYear()); // year shown in the Jan–Dec view
+  const [paceYm, setPaceYm] = useRemembered('targets.paceMonth', latestPaceYm);
+  const [year, setYear] = useRemembered('targets.year', now.getFullYear()); // year shown in the Jan–Dec view
 
   // Views gained per day across all videos, from the daily sync snapshots.
   const published = (contents || []).filter((c) => c.status === 'published');

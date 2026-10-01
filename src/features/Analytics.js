@@ -1,4 +1,5 @@
 import { html } from '../lib/html.js';
+import { useRemembered } from '../lib/remember.js';
 import { useState } from 'preact/hooks';
 import { Kpi, Icon, Empty } from '../components/ui.js';
 import { TrendChart } from './TrendChart.js';
@@ -44,13 +45,15 @@ export function Analytics({ contents, accounts, accountStats, metricsHistory, on
   // `f` = the filters currently APPLIED to the results. `draft` = what the user is
   // editing in the filter bar. Nothing filters until they press Search (setF(draft)).
   // Opened from the Monthly Report's "Post performance" button: start on its period.
-  const initial = () => {
+  // Opened from the Monthly Report's button: its dates come in the link and win.
+  // Otherwise the last applied filters are remembered for this tab.
+  const fromLink = (() => {
     const q = new URLSearchParams(location.hash.split('?')[1] || '');
-    if (!q.has('from') && !q.has('to')) return DEFAULTS;
+    if (!q.has('from') && !q.has('to')) return null;
     return { ...DEFAULTS, from: q.get('from') || '', to: q.get('to') || '', preset: q.get('preset') || 'custom' };
-  };
-  const [f, setF] = useState(initial);
-  const [draft, setDraft] = useState(initial);
+  })();
+  const [f, setF] = useRemembered('performance.filters', DEFAULTS, { override: fromLink });
+  const [draft, setDraft] = useState(f);
   const [showEntry, setShowEntry] = useState(false);
   const [sel, setSel] = useState(null); // which KPI tile is expanded
   const history = metricsHistory || [];

@@ -1,4 +1,5 @@
 import { html } from '../lib/html.js';
+import { useRemembered } from '../lib/remember.js';
 import { useState } from 'preact/hooks';
 import { Icon, Empty } from '../components/ui.js';
 import { analytics, compact, withThousands, erOf, breakdownBy } from '../lib/metrics.js';
@@ -53,9 +54,9 @@ function rangeFor(key, now) {
 export function AnalyticsDashboard({ contents, accountStats, onNavigate, onRefresh }) {
   const now = new Date();
   const monthDefault = rangeFor('month', now);
-  const [rangeKey, setRangeKey] = useState('month');
-  const [cFrom, setCFrom] = useState(monthDefault.from);
-  const [cTo, setCTo] = useState(monthDefault.to);
+  const [rangeKey, setRangeKey] = useRemembered('report.range', 'month');
+  const [cFrom, setCFrom] = useRemembered('report.from', monthDefault.from);
+  const [cTo, setCTo] = useRemembered('report.to', monthDefault.to);
   const [viewing, setViewing] = useState(null); // a saved report being shown
   const [reports, setReports] = useState(() => readKV(REPORTS_KEY, {}) || {});
   const [saveMsg, setSaveMsg] = useState(null);
@@ -302,7 +303,7 @@ const BREAKDOWNS = [
 ];
 
 function BreakdownCard({ published }) {
-  const [field, setField] = useState('funnel_stage');
+  const [field, setField] = useRemembered('report.breakdown', 'funnel_stage');
   const rows = breakdownBy(published, field);
   const tagged = rows.filter((x) => x.key !== '__none');
   const untagged = rows.find((x) => x.key === '__none');

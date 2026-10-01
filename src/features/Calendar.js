@@ -1,4 +1,5 @@
 import { html } from '../lib/html.js';
+import { useRemembered } from '../lib/remember.js';
 import { useState } from 'preact/hooks';
 import { Icon, Platform, Badge } from '../components/ui.js';
 import { PLATFORMS, STATUSES, FUNNELS } from '../lib/constants.js';
@@ -8,10 +9,10 @@ const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DEFAULT_HOUR = 10; // time given to a backlog post dropped onto a day
 
 export function Calendar({ contents, onNew, onOpen, onNewOnDate, onReschedule }) {
-  const [cursor, setCursor] = useState(new Date());
-  const [view, setView] = useState('month');
+  const [cursor, setCursor] = useRemembered('calendar.month', () => new Date(), { revive: (v) => new Date(v) });
+  const [view, setView] = useRemembered('calendar.view', 'month');
   // status 'active' = everything except taken-down posts (the default).
-  const [filters, setFilters] = useState({ platform: 'all', status: 'active', funnel: 'all' });
+  const [filters, setFilters] = useRemembered('calendar.filters', { platform: 'all', status: 'active', funnel: 'all' });
   const [dragId, setDragId] = useState(null);
   const [overKey, setOverKey] = useState(null); // day (or 'backlog') being dragged over
   // Card edge colour = the post's funnel stage (grey when untagged).

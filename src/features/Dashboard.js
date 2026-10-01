@@ -1,4 +1,5 @@
 import { html } from '../lib/html.js';
+import { useRemembered } from '../lib/remember.js';
 import { useState } from 'preact/hooks';
 import { Kpi, Badge, Platform, Icon, Empty } from '../components/ui.js';
 import { dashboard, erOf, compact } from '../lib/metrics.js';
@@ -48,7 +49,7 @@ export function Dashboard({ contents, config, onNew, onOpen, onNavigate, onRefre
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   // A single date-range filter drives every tile, so the overview stays consistent.
-  const [rangeKey, setRangeKey] = useState('month');
+  const [rangeKey, setRangeKey] = useRemembered('dashboard.range', 'month');
   const rangeLabel = (RANGES.find((r) => r.key === rangeKey) || {}).label || '';
   const d = dashboard(contents, now, rangeFor(rangeKey, now));
 
