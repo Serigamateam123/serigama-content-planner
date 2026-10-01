@@ -16,9 +16,10 @@ Six screens, in two groups:
 - **Monthly Report** — the one-glance summary for meetings: pick any month or date range and every
   number follows it — goals and pace, headline numbers, what kind of
   content works (by funnel stage / pillar / product), and **saved report snapshots**.
-- **Targets** — a monthly *views in the month* target vs actual line chart (like a sales target
-  chart): starts at 563K in Oct 2026 and grows 5% a month, with this month's forecast and a
-  month-by-month table where any month's target can be changed.
+- **Targets** — the team's monthly *views in the month* target (563K in Oct 2026, +5% a month).
+  *This month — pace* shows views added up day by day against a straight line to the target, with
+  ahead/behind, views needed per day and a forecast; *Month by month* shows green/red bars vs target
+  with an editable table; a *Weekly check* compares last week and this week for the Friday meeting.
 - **Post Performance** — every post's numbers in detail, trends, hashtags, followers, audience.
 
 ---
