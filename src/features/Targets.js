@@ -257,8 +257,8 @@ export function Targets({ contents, metricsHistory }) {
             <span><i class="sq" style=${{ background: '#e5484d' }}></i>Missed</span>
             <span><i class="sq" style=${{ background: '#f5b517' }}></i>In progress</span>
             ${months.some((m) => m.needsStudio) ? html`<span><i class="sq" style=${{ background: '#b8bfcc' }}></i>Estimate — needs TikTok Studio total</span>` : ''}
-            <span><i style=${{ borderTop: '2px dashed #9aa2b1' }}></i>Target</span>
-            ${months.some((m) => m.reference) ? html`<span><i style=${{ borderTop: '2px dashed #cdd2dc' }}></i>Reference target (set afterwards, faded bars)</span>` : ''}
+            ${months.some((m) => m.isCur && m.target != null) ? html`<span><i style=${{ borderTop: '2px dashed #1f2430' }}></i>This month's target</span>` : ''}
+            ${months.some((m) => m.reference) ? html`<span><i class="sq" style=${{ background: '#0f9d58', opacity: 0.4 }}></i>Faded = before targets started (reference)</span>` : ''}
           </div>
           <${MonthBars} months=${months} />
           <div class="muted" style=${{ fontSize: '12.5px', margin: '8px 0 14px' }}>${judged.length ? html`Hit target <strong>${hits} of ${judged.length}</strong> finished ${judged.length === 1 ? 'month' : 'months'} since ${ymLabel(cfg.startMonth)}.` : `The official record starts with ${ymLabel(cfg.startMonth)} — results appear once it finishes.`}${months.some((m) => m.reference) ? ' Faded months before then use reference targets and don’t count.' : ''}</div>
@@ -471,7 +471,11 @@ function MonthBars({ months }) {
   const tgts = months.map((m) => m.target).filter((v) => v != null);
   const ref = Math.max(...tgts, 1);
   const within = (v) => v != null && v <= ref * OUTLIER_FACTOR;
-  const niceMax = niceCeil(Math.max(...tgts, ...months.map((m) => m.done).filter(within), ...months.map((m) => m.forecast).filter(within), 1) * 1.08);
+  // Only this month's target is drawn, so scale to it (or to all targets when the
+  // shown year doesn't include this month, e.g. next year's plan).
+  const curI = months.findIndex((m) => m.isCur && m.target != null);
+  const shownTargets = curI >= 0 ? [months[curI].target] : tgts;
+  const niceMax = niceCeil(Math.max(...shownTargets, ...months.map((m) => m.done).filter(within), ...months.map((m) => m.forecast).filter(within), 1) * 1.08);
   const innerW = W - padL - padR, innerH = H - padT - padB;
   const slot = innerW / n;
   const cx = (i) => padL + slot * (i + 0.5);
@@ -479,11 +483,6 @@ function MonthBars({ months }) {
   const bw = Math.min(46, slot * 0.56);
   const gridVals = Array.from({ length: 5 }, (_, i) => (niceMax / 4) * i);
   const color = (m) => (m.done == null ? null : m.needsStudio ? '#b8bfcc' : !m.final ? '#f5b517' : m.target == null ? '#9aa2b1' : m.done >= m.target ? '#0f9d58' : '#e5484d');
-  // Reference part of the target line (lighter) runs into the first official month so the two join.
-  const pt = (m, i) => (m.target != null ? `${cx(i)},${y(m.target)}` : null);
-  const firstOfficial = months.findIndex((m) => m.target != null && !m.reference);
-  const refPts = months.map((m, i) => (m.reference || i === firstOfficial ? pt(m, i) : null)).filter(Boolean).join(' ');
-  const tPts = months.map((m, i) => (m.target != null && !m.reference ? pt(m, i) : null)).filter(Boolean).join(' ');
 
   let tip = null;
   if (hover != null) {
@@ -518,9 +517,13 @@ function MonthBars({ months }) {
           <text x=${cx(i)} y=${H - 12} text-anchor="middle" font-size="11" fill=${m.isCur ? '#1f2430' : '#9aa2b1'} font-weight=${m.isCur ? 700 : 400}>${ymLabel(m.ym).split(' ')[0]}</text>
         </g>`;
       })}
-      ${refPts.includes(' ') ? html`<polyline points=${refPts} fill="none" stroke="#cdd2dc" stroke-width="2" stroke-dasharray="4 4" />` : ''}
-      ${tPts ? html`<polyline points=${tPts} fill="none" stroke="#9aa2b1" stroke-width="2" stroke-dasharray="6 5" />` : ''}
-      ${months.map((m, i) => (m.target != null ? html`<circle cx=${cx(i)} cy=${y(m.target)} r="3" fill=${m.reference ? '#cdd2dc' : '#9aa2b1'} />` : ''))}
+      ${curI >= 0 ? (() => {
+        const ty = y(months[curI].target), x1 = cx(curI) - slot / 2 + 3, x2 = cx(curI) + slot / 2 - 3;
+        return html`<g>
+          <line x1=${x1} y1=${ty} x2=${x2} y2=${ty} stroke="#1f2430" stroke-width="2" stroke-dasharray="5 3" />
+          <text x=${cx(curI)} y=${ty - 7} text-anchor="middle" font-size="10.5" font-weight="700" fill="#1f2430">Target ${compact(months[curI].target)}</text>
+        </g>`;
+      })() : ''}
       ${hover != null ? html`<g>
         <rect x=${tip.bx} y=${tip.by} width=${tip.boxW} height=${tip.boxH} rx="6" fill="#1f2430" opacity="0.96" />
         ${tip.lines.map((l, i) => html`<text x=${tip.bx + 9} y=${tip.by + 17 + i * 14} font-size=${i ? 10.5 : 10} font-weight=${i ? 600 : 400} fill=${i ? '#fff' : '#c7ccf7'}>${l}</text>`)}
