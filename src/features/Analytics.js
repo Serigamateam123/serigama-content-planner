@@ -3,7 +3,6 @@ import { useState } from 'preact/hooks';
 import { Kpi, Icon, Empty } from '../components/ui.js';
 import { TrendChart } from './TrendChart.js';
 import { TikTokConnect } from './TikTokConnect.js';
-import { GoalsCard } from './Goals.js';
 import { analytics, compact, withThousands, erOf, engagementOf, periodMetrics, periodTrend, daysOfHistory, applyFilters, engagementExtras } from '../lib/metrics.js';
 
 // Unicode-block sparkline from a list of numbers (shared by monthly + engagement).
@@ -215,8 +214,6 @@ export function Analytics({ contents, accounts, accountStats, metricsHistory, on
       : null}
 
     ${sel === 'views' ? html`
-      <${GoalsCard} contents=${contents} accountStats=${accountStats} />
-
       <${MonthlyReport} contents=${contents} followers=${a.followerGrowth ? a.followerGrowth.current : 0} />
 
       <div class="card card-pad section-gap">
