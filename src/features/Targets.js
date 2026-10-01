@@ -14,9 +14,10 @@ const KEY = 'serigama.targets';
 
 // Agreed starting plan: 563K in October 2026, then +5% every month.
 const DEFAULT_VIEWS_TARGET = { startMonth: '2026-10', start: 563000, growthPct: 5, overrides: {} };
-const SHOW_MONTHS = 12; // months of targets shown from the start month
-const HISTORY_MONTHS = 6; // months of actuals shown before targets begin
 const MIN_DAYS_FOR_FORECAST = 3;
+// A month's actual this many times above the chart's other values is drawn
+// clipped at the top (with its real number), so one viral month can't squash the rest.
+const OUTLIER_FACTOR = 2;
 
 // --- month helpers ("YYYY-MM" keys) ------------------------------------------
 const ymOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -31,11 +32,12 @@ export function readTargets() {
   return { views: { ...DEFAULT_VIEWS_TARGET, ...((saved && saved.views) || {}) } };
 }
 
-// Target for a month: the override if one is set, else start × (1 + growth)^n.
+// Target for a month: the override if one is set (any month, even before the
+// plan started), else start × (1 + growth)^n from the start month on.
 export function targetFor(cfg, ym) {
+  if (cfg.overrides && cfg.overrides[ym] != null) return Number(cfg.overrides[ym]);
   const n = monthsBetween(cfg.startMonth, ym);
   if (n < 0) return null;
-  if (cfg.overrides && cfg.overrides[ym] != null) return Number(cfg.overrides[ym]);
   return Math.round(Number(cfg.start) * Math.pow(1 + Number(cfg.growthPct) / 100, n));
 }
 
@@ -48,6 +50,7 @@ export function Targets({ contents, metricsHistory }) {
 
   const now = new Date();
   const curYm = ymOf(now);
+  const [year, setYear] = useState(now.getFullYear()); // the calendar year shown
   const studio = (readKV('serigama.monthly', {}) || {}).months || {};
 
   // This month before it's captured from Studio: estimate from the daily sync's
@@ -69,11 +72,7 @@ export function Targets({ contents, metricsHistory }) {
     return null;
   };
 
-  // Rows: up to 6 months of history (only months with Studio data) + 12 target months.
-  const firstHistory = Object.keys(studio).sort().find((k) => monthsBetween(k, cfg.startMonth) <= HISTORY_MONTHS && k < cfg.startMonth);
-  const fromYm = firstHistory || cfg.startMonth;
-  const rows = [];
-  for (let ym = fromYm; monthsBetween(ym, addMonths(cfg.startMonth, SHOW_MONTHS - 1)) >= 0; ym = addMonths(ym, 1)) {
+  const buildRow = (ym) => {
     const target = targetFor(cfg, ym);
     const actual = actualFor(ym);
     const isPast = ym < curYm, isCur = ym === curYm;
@@ -82,17 +81,31 @@ export function Targets({ contents, metricsHistory }) {
       forecast = Math.round((actual.value / actual.days) * daysIn(ym));
     }
     let status;
-    if (target == null) status = 'history';
+    if (target == null) status = 'notarget';
     else if (!isPast && !isCur) status = 'upcoming';
     else if (isCur) status = 'current';
     else if (!actual) status = 'nodata';
     else if (!actual.complete && actual.days && actual.days < daysIn(ym)) status = actual.value >= target ? 'hit' : 'partial';
     else status = actual.value >= target ? 'hit' : 'miss';
-    rows.push({ ym, target, actual, forecast, status, overridden: cfg.overrides && cfg.overrides[ym] != null });
-  }
+    return { ym, target, actual, forecast, status, overridden: cfg.overrides && cfg.overrides[ym] != null };
+  };
 
-  const cur = rows.find((r) => r.ym === curYm) || rows.find((r) => r.status === 'upcoming');
-  const judged = rows.filter((r) => r.status === 'hit' || r.status === 'miss');
+  // The chart and table show one calendar year, January to December.
+  const rows = Array.from({ length: 12 }, (_, i) => buildRow(`${year}-${String(i + 1).padStart(2, '0')}`));
+
+  // Years worth browsing: from the first month with data or a target, to a year past the plan start.
+  const firstYm = [...Object.keys(studio), cfg.startMonth, ...Object.keys(cfg.overrides || {})].sort()[0];
+  const minYear = Math.min(Number(firstYm.slice(0, 4)), now.getFullYear());
+  const maxYear = Math.max(Number(cfg.startMonth.slice(0, 4)), now.getFullYear()) + 1;
+
+  // Hit/miss record across every finished month that has a target (all years).
+  const judged = [];
+  const firstTargetYm = [cfg.startMonth, ...Object.keys(cfg.overrides || {})].sort()[0];
+  for (let ym = firstTargetYm; ym < curYm; ym = addMonths(ym, 1)) {
+    const r = buildRow(ym);
+    if (r.status === 'hit' || r.status === 'miss') judged.push(r);
+  }
+  const cur = buildRow(curYm >= cfg.startMonth ? curYm : cfg.startMonth);
   const hits = judged.filter((r) => r.status === 'hit').length;
   const last3 = judged.slice(-3);
   const holdHint = last3.length === 3 && last3.every((r) => r.status === 'miss');
@@ -146,7 +159,7 @@ export function Targets({ contents, metricsHistory }) {
           : cur.actual.complete ? 'final · TikTok Studio' : `TikTok Studio · to day ${cur.actual.days}`} />
       <${Kpi} label="Forecast" value=${cur.forecast != null ? compact(cur.forecast) : '—'}
         sub=${cur.forecast != null ? `${curPct}% of target at this pace` : cur.status === 'current' ? `from day ${MIN_DAYS_FOR_FORECAST} of the month` : '—'} />
-      <${Kpi} label="Months on target" value=${judged.length ? `${hits} of ${judged.length}` : '—'} sub=${judged.length ? `since ${ymLabel(cfg.startMonth)}` : 'first result after this month'} />
+      <${Kpi} label="Months on target" value=${judged.length ? `${hits} of ${judged.length}` : '—'} sub=${judged.length ? `since ${ymLabel(firstTargetYm)}` : 'first result after this month'} />
     </div>` : ''}
 
     ${holdHint ? html`<div class="alert section-gap">
@@ -156,7 +169,12 @@ export function Targets({ contents, metricsHistory }) {
 
     <div class="card card-pad section-gap">
       <div class="chart-head" style=${{ marginBottom: '4px' }}>
-        <div class="card-title">Views in the month — target vs actual</div>
+        <div class="card-title">Views in the month — target vs actual · ${year}</div>
+        <div class="cal-nav no-print">
+          <button class="icon-btn" disabled=${year <= minYear} onClick=${() => setYear(year - 1)} aria-label="Previous year"><${Icon} name="chevronLeft" size=${16} /></button>
+          <button class="btn btn-sm" onClick=${() => setYear(now.getFullYear())}>${year}</button>
+          <button class="icon-btn" disabled=${year >= maxYear} onClick=${() => setYear(year + 1)} aria-label="Next year"><${Icon} name="chevronRight" size=${16} /></button>
+        </div>
       </div>
       <div class="tgt-legend">
         <span><i style=${{ borderTop: '2.5px solid #4b57f5' }}></i>Actual</span>
@@ -167,7 +185,7 @@ export function Targets({ contents, metricsHistory }) {
     </div>
 
     <div class="card card-pad section-gap">
-      <div class="card-title" style=${{ marginBottom: '6px' }}>Month by month</div>
+      <div class="card-title" style=${{ marginBottom: '6px' }}>Month by month · ${year}</div>
       <div style=${{ overflowX: 'auto' }}>
         <table class="atable">
           <thead><tr><th>Month</th><th>Target</th><th>Actual</th><th>% of target</th><th>Status</th><th class="no-print"></th></tr></thead>
@@ -175,7 +193,7 @@ export function Targets({ contents, metricsHistory }) {
             ${rows.map((r) => {
               const p = pct(r.status === 'current' ? r.forecast : r.actual && r.actual.value, r.target);
               const editingRow = rowEdit && rowEdit.ym === r.ym;
-              return html`<tr class=${r.status === 'history' ? 'muted' : ''} style=${r.status === 'current' ? { background: '#fff7e6' } : {}}>
+              return html`<tr class=${r.status === 'notarget' ? 'muted' : ''} style=${r.status === 'current' ? { background: '#fff7e6' } : {}}>
                 <td><strong>${ymLabel(r.ym)}</strong></td>
                 <td>${editingRow
                   ? html`<span class="tgt-edit">
@@ -191,8 +209,8 @@ export function Targets({ contents, metricsHistory }) {
                   : html`<span class="muted">—</span>`}</td>
                 <td>${p != null ? html`<span style=${{ color: p >= 100 ? '#0f7a4d' : '#b4232a', fontWeight: 600 }}>${p}%${r.status === 'current' ? html`<span class="muted" style=${{ display: 'block', fontSize: '11px', fontWeight: 400 }}>forecast</span>` : ''}</span>` : html`<span class="muted">—</span>`}</td>
                 <td>${statusChip(r.status)}</td>
-                <td class="no-print">${r.target != null && !editingRow
-                  ? html`<button class="btn btn-ghost btn-sm" title="Change this month's target" onClick=${() => { setErr(''); setRowEdit({ ym: r.ym, value: r.target }); }}><${Icon} name="pencil" size=${13} /></button>`
+                <td class="no-print">${!editingRow
+                  ? html`<button class="btn btn-ghost btn-sm" title=${r.target != null ? "Change this month's target" : 'Add a target for this month'} onClick=${() => { setErr(''); setRowEdit({ ym: r.ym, value: r.target != null ? r.target : '' }); }}><${Icon} name="pencil" size=${13} /></button>`
                   : ''}</td>
               </tr>`;
             })}
@@ -224,7 +242,7 @@ function statusChip(status) {
     nodata: ['Capture from Studio', 'tgt-muted'],
     current: ['In progress', 'tgt-cur'],
     upcoming: ['Upcoming', 'tgt-muted'],
-    history: ['Before targets', 'tgt-muted'],
+    notarget: ['No target set', 'tgt-muted'],
   };
   const [label, cls] = map[status] || [status, 'tgt-muted'];
   return html`<span class=${'tgt-chip ' + cls}>${label}</span>`;
@@ -281,16 +299,23 @@ function TargetModal({ cfg, err, onClose, onSave }) {
 // Dependency-free SVG, same look as TrendChart; hover a month for the numbers.
 function TargetChart({ rows, curYm }) {
   const [hover, setHover] = useState(null);
-  const W = 720, H = 280, padL = 52, padR = 16, padT = 18, padB = 34;
+  const W = 720, H = 290, padL = 52, padR = 16, padT = 30, padB = 34;
   const n = rows.length;
   if (!n) return '';
   // The current month's partial actual would dip the line, so it's drawn as the forecast instead.
   const actualPt = (r) => (r.actual && r.ym !== curYm ? r.actual.value : null);
-  const vals = rows.flatMap((r) => [r.target, actualPt(r), r.forecast]).filter((v) => v != null);
-  const niceMax = niceCeil(Math.max(...vals, 1));
+  // Scale to the targets, forecast and normal months; a viral month far above them
+  // is clipped at the top (shown with its real number) instead of squashing the chart.
+  const base = rows.flatMap((r) => [r.target, r.forecast]).filter((v) => v != null);
+  const acts = rows.map(actualPt).filter((v) => v != null).sort((a, b) => a - b);
+  const median = acts.length ? acts[Math.floor(acts.length / 2)] : 0;
+  const ref = Math.max(...base, median, 1);
+  const normal = acts.filter((v) => v <= ref * OUTLIER_FACTOR);
+  const niceMax = niceCeil(Math.max(...base, ...normal, 1) * 1.08);
+  const clipped = (v) => v > niceMax;
   const innerW = W - padL - padR, innerH = H - padT - padB;
   const x = (i) => padL + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
-  const y = (v) => padT + innerH - (v / niceMax) * innerH;
+  const y = (v) => padT + innerH - (Math.min(v, niceMax) / niceMax) * innerH;
   const band = n > 1 ? innerW / (n - 1) : innerW;
   const gridVals = Array.from({ length: 5 }, (_, i) => (niceMax / 4) * i);
 
@@ -337,9 +362,13 @@ function TargetChart({ rows, curYm }) {
       ${cur && cur.forecast != null && prevActual != null
         ? html`<line x1=${x(ci - 1)} y1=${y(prevActual)} x2=${x(ci)} y2=${y(cur.forecast)} stroke="#4b57f5" stroke-width="2" stroke-dasharray="2 4" />`
         : ''}
-      ${rows.map((r, i) => actualPt(r) != null
-        ? html`<circle cx=${x(i)} cy=${y(actualPt(r))} r="3.5" fill=${r.target != null && actualPt(r) >= r.target ? '#0f9d58' : '#fff'} stroke="#4b57f5" stroke-width="1.8" />`
-        : '')}
+      ${rows.map((r, i) => actualPt(r) == null ? ''
+        : clipped(actualPt(r))
+        ? html`<g>
+            <path d=${`M${x(i) - 5},${padT + 1} L${x(i)},${padT - 6} L${x(i) + 5},${padT + 1} Z`} fill="#4b57f5" />
+            <text x=${x(i)} y=${padT - 10} text-anchor="middle" font-size="10.5" font-weight="700" fill="#4b57f5">${compact(actualPt(r))} ↑</text>
+          </g>`
+        : html`<circle cx=${x(i)} cy=${y(actualPt(r))} r="3.5" fill=${r.target != null && actualPt(r) >= r.target ? '#0f9d58' : '#fff'} stroke="#4b57f5" stroke-width="1.8" />`)}
       ${cur && cur.forecast != null ? html`<circle cx=${x(ci)} cy=${y(cur.forecast)} r="4" fill="#fff" stroke="#4b57f5" stroke-width="1.8" stroke-dasharray="2 2" />` : ''}
 
       ${hover != null ? html`<g>
@@ -354,10 +383,12 @@ function TargetChart({ rows, curYm }) {
   </div>`;
 }
 
+// Round an axis maximum up to a tidy number (finer steps than TrendChart's so a
+// 1.2M peak gets a 1.2M–1.5M axis, not 2M).
 function niceCeil(v) {
   if (v <= 0) return 1;
   const mag = Math.pow(10, Math.floor(Math.log10(v)));
   const norm = v / mag;
-  const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  const step = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((s) => norm <= s);
   return step * mag;
 }
