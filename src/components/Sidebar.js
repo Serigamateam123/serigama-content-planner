@@ -8,8 +8,8 @@ const NAV = [
   { id: 'fundamental', label: 'Content Funnel', icon: 'funnel' },
   { section: 'Report' },
   { id: 'overview', label: 'Monthly Report', icon: 'report' },
-  { id: 'targets', label: 'Targets', icon: 'target' },
   { id: 'analytics', label: 'Post Performance', icon: 'analytics' },
+  { id: 'targets', label: 'Targets', icon: 'target' },
 ];
 
 export function Sidebar({ route, onNavigate, onNew, config, session, isCloud, onSetPassword, onSignOut }) {
