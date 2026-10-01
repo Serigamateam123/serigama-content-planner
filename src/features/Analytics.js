@@ -29,6 +29,7 @@ function erTag(er) {
   return html`<span style=${{ color: r.color, fontWeight: 600, whiteSpace: 'nowrap' }}>${r.emoji} ${r.word}</span>`;
 }
 import { FUNNELS } from '../lib/constants.js';
+import { audienceFacts, shareWord } from '../lib/audience.js';
 import { shortDate, dayKey, addDays, startOfDay, startOfMonth, parse } from '../lib/date.js';
 
 const RANGE_PRESETS = [
@@ -260,8 +261,10 @@ function FollowerMonthlyCard() {
       </table>
     </div>
     <div class="eng-notes" style=${{ borderLeft: '3px solid var(--gold-strong)' }}>
-      <div class="note">🚀 <strong>${label(peak.key)} was your best month</strong> — +${withThousands(peak.net)} (${(peak.net / (avg || 1)).toFixed(1)}× your ${withThousands(avg)}/month average). One viral video does the heavy lifting.</div>
-      <div class="note">📊 Total captured across these months: <strong>+${withThousands(total)}</strong>. Growth is <strong>spiky</strong> — the opportunity is lifting the quiet months, not chasing another fluke.</div>
+      <div class="note">🚀 <strong>${label(peak.key)} was your best month</strong> — +${withThousands(peak.net)} (${(peak.net / (avg || 1)).toFixed(1)}× your ${withThousands(avg)}/month average).${peak.net >= 2 * avg ? ' One big month did a lot of the work.' : ''}</div>
+      <div class="note">📊 Total captured across these months: <strong>+${withThousands(total)}</strong>. ${peak.net >= 2 * avg
+        ? html`Growth is <strong>spiky</strong> — the opportunity is lifting the quiet months, not waiting for another big one.`
+        : html`Growth is <strong>fairly steady</strong> month to month.`}</div>
     </div>
   </div>`;
 }
@@ -340,6 +343,8 @@ function FollowerCard({ fg, gains, posts, onClose }) {
     </div>` : ''}
 
     ${aud ? (() => {
+      const fx = audienceFacts(aud);
+      const fem = fx.female ? fx.female.pct : 0, mal = fx.male ? fx.male.pct : 0;
       const cnt = (pct) => withThousands(Math.round((pct / 100) * current));
       const panel = (icon, title, body) => html`<div style=${{ background: '#fafbfd', border: '1px solid var(--border)', borderRadius: '10px', padding: '13px 15px' }}>
         <div style=${{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '11px' }}>${icon}<span>${title}</span></div>
@@ -361,11 +366,11 @@ function FollowerCard({ fg, gains, posts, onClose }) {
         <div style=${{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '12px' }}>
           ${panel('👥', 'Gender', html`
             <div style=${{ display: 'flex', height: '18px', borderRadius: '5px', overflow: 'hidden', marginBottom: '10px' }}>
-              <div style=${{ width: aud.gender[0].pct + '%', background: '#ec4899' }}></div>
-              <div style=${{ width: aud.gender[1].pct + '%', background: '#3b82f6' }}></div>
+              <div style=${{ width: fem + '%', background: '#ec4899' }}></div>
+              <div style=${{ width: mal + '%', background: '#3b82f6' }}></div>
             </div>
-            ${legendRow('#ec4899', 'Female', aud.gender[0].pct, cnt(aud.gender[0].pct))}
-            ${legendRow('#3b82f6', 'Male', aud.gender[1].pct, cnt(aud.gender[1].pct))}
+            ${legendRow('#ec4899', 'Female', fem, cnt(fem))}
+            ${legendRow('#3b82f6', 'Male', mal, cnt(mal))}
           `)}
           ${panel('🎂', 'Age', html`${aud.age.map((a2) => statRow(a2.label, a2.pct, a2.pct + '%', '#6366f1'))}`)}
           ${panel('📍', 'Top locations', html`${aud.locations.map((l) => statRow(l.name, l.pct, l.lt1 ? '<1%' : l.pct + '%', l.name === 'Others' ? '#cbd5e1' : '#0ea5e9'))}`)}
@@ -376,9 +381,9 @@ function FollowerCard({ fg, gains, posts, onClose }) {
         </div>
         <div class="eng-notes" style=${{ marginTop: '14px', borderLeft: '3px solid var(--gold-strong)' }}>
           <div class="eng-notes-title">📝 What your audience is telling you</div>
-          <div class="note">Two-thirds of your followers are <strong>women (${aud.gender[0].pct}%)</strong>, and <strong>${(aud.age[0].pct + aud.age[1].pct).toFixed(1)}%</strong> are aged <strong>25–44</strong> — working adults with spending power, not teens.</div>
-          <div class="note"><strong>${aud.locations[0].pct}% are in ${aud.locations[0].name}.</strong> Malay-language content is clearly the right call; your small Brunei + Singapore slices share the language too.</div>
-          <div class="note">🎯 Your sweet spot: <strong>Malay workplace/relatable humour aimed at working women 25–44.</strong> That's exactly who your best posts already reach — keep feeding them.</div>
+          ${fx.lead ? html`<div class="note">${shareWord(fx.lead.pct)} of your followers are <strong>${fx.lead.word} (${fx.lead.pct}%)</strong>${fx.span ? html`, and <strong>${fx.span.pct}%</strong> are aged <strong>${fx.span.label}</strong>${fx.span.from >= 25 ? ' — working-age adults, not teens' : ''}` : ''}.</div>` : ''}
+          ${fx.top ? html`<div class="note"><strong>${fx.top.pct}% are in ${fx.top.name}</strong>${fx.next.length ? html`, then ${fx.next.map((l) => `${l.name} (${l.lt1 ? '<1' : l.pct}%)`).join(' and ')}` : ''} — content in their language and culture lands best.</div>` : ''}
+          ${fx.people && fx.span ? html`<div class="note">🎯 Your core audience: <strong>${fx.people} aged ${fx.span.label}</strong>. Make hooks, humour and offers for them first.</div>` : ''}
         </div>
         <div class="muted" style=${{ fontSize: '11px', marginTop: '8px' }}>ℹ️ TikTok only breaks audience location down to <strong>country</strong>, not city — so city-level data isn't available here.</div>
       </div>`;
@@ -626,8 +631,24 @@ function MonthlyReport({ contents, followers }) {
   const monthOf = (c) => { const d = parse(c.published_at); return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : ''; };
   const pubList = (ym) => (contents || []).filter((c) => c.status === 'published' && monthOf(c) === ym);
   const pubViews = (ym) => pubList(ym).reduce((s, c) => s + (Number(c.metrics && c.metrics.views) || 0), 0);
-  const vpf = (v) => (followers ? Math.round(v / followers) : 0);
   const ts = stored.trafficSourceOverall || {};
+  // Followers at the end of a past month = today's total minus the net gains
+  // captured for every later month. Null if a later month wasn't captured.
+  const followersAt = (ym) => {
+    if (!ym || !followers) return null;
+    let mf = null;
+    try { mf = JSON.parse(localStorage.getItem('serigama.monthlyfollowers') || 'null'); } catch (e) { mf = null; }
+    if (!mf) return null;
+    const lastKey = Object.keys(mf).sort().pop();
+    let n = followers;
+    for (let d = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 1); ; d.setMonth(d.getMonth() + 1)) {
+      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (k > lastKey) break;
+      if (mf[k] == null) return null;
+      n -= Number(mf[k]);
+    }
+    return n > 0 ? n : null;
+  };
 
   const rows = keys.map((k) => {
     const m = stored.months[k];
@@ -718,8 +739,14 @@ function MonthlyReport({ contents, followers }) {
       <div class="note">📏 Score a month by <strong>“did we land one big video?”</strong> (the ceiling), not just how many we posted — while keeping the floor from sliding.</div>
     </div>` : ''}
     <div class="eng-notes" style=${{ borderLeft: '3px solid var(--gold-strong)' }}>
-      <div class="note">🚀 <strong>${peak.short} was your biggest month by far</strong> — ${compact(peak.studioViews)} views, <strong>${(peak.studioViews / avgViews).toFixed(1)}× your monthly average</strong>${last.m.complete ? '' : `; ${last.short} is at ${compact(last.studioViews)} so far`}.</div>
-      <div class="note">🎯 <strong>Reach efficiency:</strong> ${peak.short} reached <strong>${vpf(peak.studioViews)}×</strong> your follower count — nearly all your reach is the algorithm, not your following.</div>
+      <div class="note">🚀 <strong>${peak.short} was your biggest month${peak.studioViews >= 2 * avgViews ? ' by far' : ''}</strong> — ${compact(peak.studioViews)} views, <strong>${(peak.studioViews / avgViews).toFixed(1)}× your monthly average</strong>${last.m.complete ? '' : `; ${last.short} is at ${compact(last.studioViews)} so far`}.</div>
+      ${(() => {
+        const fAt = followersAt(keys[rows.indexOf(peak)]);
+        const base = fAt || followers;
+        if (!base) return '';
+        const fy = Number(ts['For You']) || 0;
+        return html`<div class="note">🎯 <strong>Reach:</strong> ${peak.short}'s ${compact(peak.studioViews)} views were <strong>${Math.round(peak.studioViews / base)}×</strong> the ${withThousands(base)} followers you had ${fAt ? 'then' : 'now'}${fy >= 60 ? html` — with For You bringing ${fy}% of views, most reach comes from people who don't follow you yet` : ''}.</div>`;
+      })()}
       <div class="note">📡 <strong>Traffic source (overall):</strong> For You <strong>${ts['For You']}%</strong> · Profile ${ts['Personal profile']}% · Search ${ts['Search']}%.</div>
     </div>
   </div>`;

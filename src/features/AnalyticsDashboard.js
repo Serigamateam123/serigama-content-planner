@@ -4,14 +4,12 @@ import { useState } from 'preact/hooks';
 import { Icon, Empty } from '../components/ui.js';
 import { analytics, compact, withThousands, erOf, breakdownBy } from '../lib/metrics.js';
 import { GoalsCard } from './Goals.js';
+import { audienceFacts } from '../lib/audience.js';
 import { readKV, updateKVEntry } from '../lib/kv.js';
 import { startOfDay, startOfMonth, addDays, dayKey, parse, shortDate } from '../lib/date.js';
 
 const REPORTS_KEY = 'serigama.reports'; // app_kv map: report id -> saved snapshot
 
-// "Malaysia" -> "Malaysian women"; unknown countries fall back to "women in X".
-const DEMONYMS = { Malaysia: 'Malaysian', Singapore: 'Singaporean', Indonesia: 'Indonesian', Brunei: 'Bruneian', Thailand: 'Thai', Philippines: 'Filipino' };
-const womenOf = (country) => (DEMONYMS[country] ? `${DEMONYMS[country]} women` : `women in ${country}`);
 
 const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -65,6 +63,8 @@ export function AnalyticsDashboard({ contents, accountStats, onNavigate, onRefre
     ? { from: cFrom || '', to: cTo || dayKey(now), label: cFrom && cTo ? `${shortDate(cFrom)} – ${shortDate(cTo)}` : (cFrom ? `since ${shortDate(cFrom)}` : 'Custom range') }
     : rangeFor(rangeKey, now);
 
+  // Range label inside a sentence: "last 7 days" stays lower-case, month names keep capitals.
+  const rl = /^(Last|This|All)\b/.test(r.label) ? r.label.toLowerCase() : r.label;
   const at = (from, to) => analytics(contents, { account_id: 'all', platform: 'all', from, to }, accountStats || []);
   const a = at(r.from, r.to);
 
@@ -262,7 +262,7 @@ export function AnalyticsDashboard({ contents, accountStats, onNavigate, onRefre
             !vim ? 'pick a whole month to see this' : vim.missing ? `${vim.missing} not captured from TikTok Studio yet` : vim.partial ? `TikTok Studio · ${vim.partial} only` : 'TikTok Studio — same number as Targets')}
           ${stat('👁', 'Views of posts published', compact(a.totalViews), rangeKey === 'all' ? 'all-time, all videos' : 'all-time views of the posts published in this range', deltaChip(a.totalViews, cmp && cmp.views))}
           ${stat('💬', 'Engagement', compact(a.totalEngagement), `${a.avgER}% avg. rate${erWord ? ' — ' + erWord : ''}`, deltaChip(a.totalEngagement, cmp && cmp.eng))}
-          ${stat('👥', 'Followers', withThousands(followers), follInRange != null ? `+${withThousands(follInRange)} gained (${r.label.toLowerCase()})` : 'current total', follDeltaPct != null ? html`<span style=${{ color: follDeltaPct >= 0 ? '#0f7a4d' : '#b4232a', fontWeight: 600, fontSize: '11.5px' }}>${follDeltaPct >= 0 ? '▲' : '▼'} ${Math.abs(follDeltaPct)}% <span class="muted" style=${{ fontWeight: 400 }}>vs prev</span></span>` : '')}
+          ${stat('👥', 'Followers', withThousands(followers), follInRange != null ? `+${withThousands(follInRange)} gained (${rl})` : 'current total', follDeltaPct != null ? html`<span style=${{ color: follDeltaPct >= 0 ? '#0f7a4d' : '#b4232a', fontWeight: 600, fontSize: '11.5px' }}>${follDeltaPct >= 0 ? '▲' : '▼'} ${Math.abs(follDeltaPct)}% <span class="muted" style=${{ fontWeight: 400 }}>vs prev</span></span>` : '')}
           ${stat('🎬', 'Posts published', withThousands(a.publishedCount), `~${perWeek} / week · ${compact(avgPer)} avg views`, deltaChip(a.publishedCount, cmp && cmp.posts, true))}
         </div>
 
@@ -292,26 +292,26 @@ export function AnalyticsDashboard({ contents, accountStats, onNavigate, onRefre
           ${bestFollMonth ? highlight('🚀 Best month for follows', bestFollMonth.m, '+' + withThousands(bestFollMonth.net) + ' followers') : ''}
           ${aud ? (() => {
             const cf = (pct) => withThousands(Math.round((pct / 100) * followers));
-            const g = aud.gender[0], age = aud.age[0].pct + aud.age[1].pct, loc = aud.locations[0];
+            const fx = audienceFacts(aud);
             const mut = { fontWeight: 400, fontSize: '11.5px' };
             return html`<div style=${{ border: '1px solid var(--border)', borderRadius: '12px', padding: '14px 16px' }}>
               <div style=${{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)', marginBottom: '6px' }}>👤 Who follows you <span style=${{ fontWeight: 400 }}>(of ${withThousands(followers)})</span></div>
               <div style=${{ fontSize: '13px', fontWeight: 600, lineHeight: 1.65 }}>
-                ${g.pct}% women <span class="muted" style=${mut}>≈ ${cf(g.pct)}</span><br/>
-                ${age.toFixed(0)}% aged 25–44 <span class="muted" style=${mut}>≈ ${cf(age)}</span><br/>
-                ${loc.pct}% in ${loc.name} <span class="muted" style=${mut}>≈ ${cf(loc.pct)}</span>
+                ${fx.lead ? html`${fx.lead.pct}% ${fx.lead.word} <span class="muted" style=${mut}>≈ ${cf(fx.lead.pct)}</span><br/>` : ''}
+                ${fx.span ? html`${Math.round(fx.span.pct)}% aged ${fx.span.label} <span class="muted" style=${mut}>≈ ${cf(fx.span.pct)}</span><br/>` : ''}
+                ${fx.top ? html`${fx.top.pct}% in ${fx.top.name} <span class="muted" style=${mut}>≈ ${cf(fx.top.pct)}</span>` : ''}
               </div>
             </div>`;
           })() : ''}
-          ${highlight('📅 Posting cadence', `~${perWeek} posts / week`, `${a.publishedCount} posts in ${r.label.toLowerCase()}`)}
+          ${highlight('📅 Posting cadence', `~${perWeek} posts / week`, `${a.publishedCount} posts in ${rl}`)}
         </div>
 
         <${BreakdownCard} published=${a.published} />
 
         <div class="card card-pad section-gap" style=${{ borderLeft: '3px solid var(--gold-strong)' }}>
           <div class="eng-notes-title">📝 The story</div>
-          <div class="note">In <strong>${r.label.toLowerCase()}</strong>, ${a.publishedCount} ${a.publishedCount === 1 ? 'post' : 'posts'} earned <strong>${compact(a.totalViews)} views</strong> at <strong>${a.avgER}%</strong> engagement${erWord ? ' (' + erWord + ')' : ''}${cmp && cmp.views ? html` — <strong>${pctChange(a.totalViews, cmp.views) >= 0 ? 'up' : 'down'} ${Math.abs(pctChange(a.totalViews, cmp.views) || 0)}%</strong> vs the period before` : ''}.</div>
-          ${aud ? html`<div class="note">You're at <strong>${withThousands(followers)} followers</strong>${follInRange != null ? html`, <strong>+${withThousands(follInRange)}</strong> in this window` : ''}. The audience is mostly <strong>${womenOf(aud.locations[0].name)} aged 25–44</strong> — working adults, your actual buyers.</div>` : ''}
+          <div class="note">The ${a.publishedCount} ${a.publishedCount === 1 ? 'post' : 'posts'} published in <strong>${rl}</strong> have earned <strong>${compact(a.totalViews)} views</strong> so far at <strong>${a.avgER}%</strong> engagement${erWord ? ' (' + erWord + ')' : ''}${cmp && cmp.views ? html` — <strong>${pctChange(a.totalViews, cmp.views) >= 0 ? 'up' : 'down'} ${Math.abs(pctChange(a.totalViews, cmp.views) || 0)}%</strong> vs the period before` : ''}.</div>
+          ${aud ? html`<div class="note">You're at <strong>${withThousands(followers)} followers</strong>${follInRange != null ? html`, <strong>+${withThousands(follInRange)}</strong> in this window` : ''}. ${(() => { const fx = audienceFacts(aud); return fx.people && fx.span ? html` The audience is mostly <strong>${fx.people} aged ${fx.span.label}</strong>.` : ''; })()}</div>` : ''}
           ${top3[0] ? html`<div class="note">🎯 The lever: <strong>reach new people consistently.</strong> Wins like “${clip(top3[0].title)}” show the ceiling is high — the job is lifting the quiet posts.</div>` : ''}
         </div>
       `}

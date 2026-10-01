@@ -1,7 +1,7 @@
 // Pure derivations used by the Dashboard and Analytics screens. Everything here
 // takes plain arrays of content and returns numbers/objects — no I/O.
 
-import { startOfMonth, endOfMonth, startOfDay, addDays, dayKey, parse, isSameMonth } from './date.js';
+import { startOfDay, addDays, dayKey, parse } from './date.js';
 import { PRODUCTION_STATUSES, FUNNELS } from './constants.js';
 
 export function engagementOf(m) {
