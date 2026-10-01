@@ -297,6 +297,10 @@ button { font-family: inherit; }
 .atable td { padding: 10px; border-bottom: 1px solid var(--border-2); font-variant-numeric: tabular-nums; vertical-align: middle; }
 .atable th:not(:first-child), .atable td:not(:first-child) { text-align: right; white-space: nowrap; }
 .atable tbody tr:hover { background: #f7f8fc; }
+.wow { display: block; font-size: 10.5px; font-weight: 600; margin-top: 2px; white-space: nowrap; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.wow-up { color: #0f7a4d; }
+.wow-down { color: #b4232a; }
+.wow-flat { color: var(--muted-2); font-weight: 500; }
 .atable-title { max-width: 460px; }
 .atable-title a { color: var(--blue-1); text-decoration: none; font-weight: 500; }
 .atable-title a:hover { text-decoration: underline; }
@@ -368,6 +372,36 @@ button { font-family: inherit; }
 }
 .chip-btn:hover { background: #f7f8fc; color: var(--ink); }
 .chip-btn.active { background: var(--blue-1); border-color: var(--blue-1); color: #fff; }
+
+/* --- Fundamental Content (funnels + inspo library) --------------------- */
+.fund-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+
+.funnel-card { text-align: left; cursor: pointer; background: var(--card); border: 1px solid var(--border);
+  border-top: 4px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  padding: 22px 20px 16px; display: flex; flex-direction: column; gap: 8px; transition: box-shadow .15s, transform .15s; }
+.funnel-card:hover { box-shadow: 0 10px 28px rgba(31,36,48,.12); transform: translateY(-2px); }
+.funnel-emoji { font-size: 30px; line-height: 1; }
+.funnel-tag { align-self: flex-start; font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, #fff); border-radius: 999px; padding: 3px 10px; }
+.funnel-name { font-size: 18px; font-weight: 700; color: var(--ink); }
+.funnel-desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+.funnel-foot { margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--border-2);
+  display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+
+.inspo-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; display: flex; flex-direction: column; }
+.inspo-thumb { position: relative; aspect-ratio: 16 / 10; cursor: pointer;
+  background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--accent) 22%, #0b0f1a), #0b0f1a);
+  display: flex; align-items: center; justify-content: center; }
+.inspo-play { width: 46px; height: 46px; border-radius: 50%; background: rgba(255,255,255,.94); color: #111;
+  display: flex; align-items: center; justify-content: center; font-size: 15px; padding-left: 3px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35); transition: transform .12s; }
+.inspo-thumb:hover .inspo-play { transform: scale(1.08); }
+.inspo-link { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #dfe4f2; font-size: 12.5px; font-weight: 600; }
+.inspo-body { padding: 12px 14px 10px; display: flex; flex-direction: column; gap: 6px; }
+.inspo-title { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.inspo-note { font-size: 12.5px; color: var(--ink); line-height: 1.5; white-space: pre-wrap; }
+.inspo-actions { margin-top: 4px; display: flex; align-items: center; gap: 4px; }
+.inspo-actions .btn { text-decoration: none; }
 
 /* --- Print (Analytics → PDF) ------------------------------------------- */
 @media print {

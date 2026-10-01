@@ -211,7 +211,7 @@ export function Analytics({ contents, campaigns, accounts, accountStats, metrics
     ${sel === 'followers'
       ? html`<${FollowerCard} fg=${a.followerGrowth} gains=${a.followerGain} posts=${a.published} onClose=${() => setSel(null)} /><${FollowerMonthlyCard} />`
       : sel
-      ? html`<${KpiDetail} kind=${sel} a=${a} rangeMode=${rangeMode} onClose=${() => setSel(null)} />`
+      ? html`<${KpiDetail} kind=${sel} a=${a} rangeMode=${rangeMode} history=${history} onClose=${() => setSel(null)} />`
       : null}
 
     ${sel === 'views' ? html`
@@ -791,12 +791,39 @@ function videoNameCell(c, setPlaying) {
 
 // Focused per-tile detail — each KPI shows ONLY the columns that belong to it,
 // so Views, Engagement, ER and Published no longer repeat the same big table.
-function KpiDetail({ kind, a, rangeMode, onClose }) {
+function KpiDetail({ kind, a, rangeMode, history, onClose }) {
   const [playing, setPlaying] = useState(null);
   const [pubSort, setPubSort] = useState({ key: 'views', dir: 'desc' });
   const TITLES = { views: 'Views', engagement: 'Engagement', er: 'Engagement rate & insights', published: 'Published posts' };
   const v = (c) => Number(c.metrics.views) || 0;
   const eng = (c) => engagementOf(c.metrics);
+
+  // Week-over-week deltas for the per-video table: compare each video's current
+  // count with its value ~7 days ago, taken from the daily content_metrics
+  // snapshots (auto-sync writes one per video per day). Only Views/Likes/Shares/
+  // Comments — and Engagement, derived from them — have this history; the Studio
+  // metrics (hook / new viewers / new followers) are captured once, no delta.
+  const WOW_CUTOFF = Date.now() - 7 * 86400000;
+  const weekAgoBy = new Map();
+  for (const m of history || []) {
+    const t = new Date(m.fetched_at).getTime();
+    if (!(t <= WOW_CUTOFF)) continue; // only snapshots at or before the 7-day mark
+    const prev = weekAgoBy.get(m.content_id);
+    if (!prev || t > prev._t) weekAgoBy.set(m.content_id, { _t: t, views: +m.views || 0, likes: +m.likes || 0, comments: +m.comments || 0, shares: +m.shares || 0 });
+  }
+  const wowCell = (c, metric) => {
+    const wa = weekAgoBy.get(c.id);
+    if (!wa) {
+      const pub = parse(c.published_at);
+      return metric === 'views' && pub && Date.now() - pub < 7 * 86400000 ? html`<div class="wow wow-flat">new</div>` : '';
+    }
+    const now = metric === 'engagement' ? eng(c) : Number(c.metrics[metric]) || 0;
+    const then = metric === 'engagement' ? wa.likes + wa.comments + wa.shares : wa[metric] || 0;
+    const d = now - then;
+    if (d === 0) return '';
+    const up = d > 0;
+    return html`<div class=${'wow ' + (up ? 'wow-up' : 'wow-down')} title="Change over the last 7 days">${up ? '▲ +' : '▼ −'}${compact(Math.abs(d))}</div>`;
+  };
 
   const rows = [...a.published];
   if (kind === 'views') rows.sort((x, y) => v(y) - v(x));
@@ -834,11 +861,11 @@ function KpiDetail({ kind, a, rangeMode, onClose }) {
   const COLS = {
     published: [
       ['Date', (c) => (c.published_at ? shortDate(c.published_at) : '—')],
-      ['Views', (c) => compact(v(c))],
-      ['Likes', (c) => compact(Number(c.metrics.likes) || 0)],
-      ['Shares', (c) => compact(Number(c.metrics.shares) || 0)],
-      ['Comments', (c) => compact(Number(c.metrics.comments) || 0)],
-      ['Engagement', (c) => compact(eng(c))],
+      ['Views', (c) => compact(v(c)), 'views'],
+      ['Likes', (c) => compact(Number(c.metrics.likes) || 0), 'likes'],
+      ['Shares', (c) => compact(Number(c.metrics.shares) || 0), 'shares'],
+      ['Comments', (c) => compact(Number(c.metrics.comments) || 0), 'comments'],
+      ['Engagement', (c) => compact(eng(c)), 'engagement'],
     ],
   }[kind] || [];
 
@@ -990,7 +1017,7 @@ function KpiDetail({ kind, a, rangeMode, onClose }) {
             return html`<th title=${title || (key ? 'Click to sort by ' + label : '')} style=${{ cursor: key ? 'pointer' : 'default', whiteSpace: 'nowrap', userSelect: 'none', color: active ? 'var(--blue-1)' : '' }}
               onClick=${key ? () => setPubSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' })) : null}>${label}${arrow}</th>`;
           };
-          return html`<div class="muted" style=${{ fontSize: '11.5px', margin: '2px 0 8px' }}>↕ Click any column heading to sort — <strong>Views</strong> for top performers, <strong>Date</strong> for newest/oldest (click again to reverse).</div>
+          return html`<div class="muted" style=${{ fontSize: '11.5px', margin: '2px 0 8px' }}>↕ Click any column heading to sort — <strong>Views</strong> for top performers, <strong>Date</strong> for newest/oldest (click again to reverse). The <strong style=${{ color: '#0f7a4d' }}>▲</strong>/<strong style=${{ color: '#b4232a' }}>▼</strong> under a number is the change over the last 7 days (Views, Likes, Shares, Comments, Engagement); “new” = posted this week.</div>
             <div style=${{ overflowX: 'auto' }}>
             <table class="atable">
               <thead><tr>${th('Video')}${COLS.map(([h]) => th(h))}
@@ -1003,7 +1030,7 @@ function KpiDetail({ kind, a, rangeMode, onClose }) {
                   const foll = c.newFollowers != null ? c.newFollowers : (s && s.new_followers != null ? s.new_followers : null); // captured Studio value preferred over the stale studio row
                   return html`<tr>
                     ${videoNameCell(c, setPlaying)}
-                    ${COLS.map(([, fn]) => html`<td>${fn(c)}</td>`)}
+                    ${COLS.map(([, fn, wowKey]) => html`<td>${fn(c)}${wowKey ? wowCell(c, wowKey) : ''}</td>`)}
                     ${showStudio ? html`${scell('hook', s && s.hook_3s_pct, s && s.hook_3s_pct != null ? s.hook_3s_pct + '%' : null, views)}${scell('newv', s && s.new_viewers_pct, s && s.new_viewers_pct != null ? s.new_viewers_pct + '%' : null, views)}${scell('foll', foll, foll != null ? '+' + withThousands(foll) : null, views)}` : ''}
                   </tr>`;
                 })}

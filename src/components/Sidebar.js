@@ -4,7 +4,7 @@ import { Icon } from './ui.js';
 const NAV = [
   { id: 'dashboard', label: 'Content Dashboard', icon: 'dashboard' },
   { id: 'calendar', label: 'Content Calendar', icon: 'calendar' },
-  { id: 'campaigns', label: 'Campaigns', icon: 'campaign' },
+  { id: 'fundamental', label: 'Content Funnel', icon: 'campaign' },
   { id: 'overview', label: 'Analytics Dashboard', icon: 'analytics' },
   { id: 'analytics', label: 'Analytics', icon: 'analytics' },
 ];

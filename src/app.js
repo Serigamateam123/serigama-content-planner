@@ -5,13 +5,13 @@ import { store, isCloud, config } from './lib/store.js';
 import { Sidebar } from './components/Sidebar.js';
 import { Dashboard } from './features/Dashboard.js';
 import { Calendar } from './features/Calendar.js';
-import { Campaigns } from './features/Campaigns.js';
+import { Fundamental } from './features/Fundamental.js';
 import { Analytics } from './features/Analytics.js';
 import { AnalyticsDashboard } from './features/AnalyticsDashboard.js';
 import { ContentModal } from './features/ContentModal.js';
 import { Login } from './features/Login.js';
 
-const ROUTES = ['dashboard', 'calendar', 'campaigns', 'overview', 'analytics'];
+const ROUTES = ['dashboard', 'calendar', 'fundamental', 'overview', 'analytics'];
 
 // Helper so a capture can be written straight to the cloud (and mirrored locally).
 // Used when refreshing the manually-pulled Studio figures.
@@ -39,6 +39,7 @@ const KV_KEYS = [
   'serigama.monthlyfollowers',
   'serigama.saves',
   'serigama.newfollowers',
+  'serigama.fundamental',
 ];
 
 // Supabase (app_kv) is the SOURCE OF TRUTH for these manually-captured figures.
@@ -165,9 +166,8 @@ function App() {
           : route === 'calendar'
           ? html`<${Calendar} contents=${contents} campaigns=${campaigns}
               onNew=${() => openNew()} onOpen=${openEdit} onNewOnDate=${(d) => openNew(d)} />`
-          : route === 'campaigns'
-          ? html`<${Campaigns} contents=${contents} campaigns=${campaigns}
-              onCreate=${createCampaign} onUpdate=${updateCampaign} onDelete=${deleteCampaign} onOpenContent=${openEdit} />`
+          : route === 'fundamental'
+          ? html`<${Fundamental} />`
           : route === 'overview'
           ? html`<${AnalyticsDashboard} contents=${contents} campaigns=${campaigns} accounts=${accounts} accountStats=${accountStats}
               onNavigate=${navigate} onRefresh=${loadData} />`
