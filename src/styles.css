@@ -433,7 +433,8 @@ button { font-family: inherit; }
 .goal-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; font-weight: 600; }
 .goal-num { font-size: 13px; margin: 6px 0 6px; }
 .goal-num strong { font-size: 18px; }
-.goal-edit { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 12px; align-items: end; }
+.goal-views-link { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-2); }
+.goal-edit { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; align-items: end; }
 @media (max-width: 900px) { .goal-edit { grid-template-columns: 1fr 1fr; } }
 
 /* --- Calendar filters + drag & drop ------------------------------------ */

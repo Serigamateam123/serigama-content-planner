@@ -4,22 +4,20 @@ import { Icon } from '../components/ui.js';
 import { readKV, writeKV } from '../lib/kv.js';
 import { engagementOf, followerSeries, withThousands } from '../lib/metrics.js';
 import { startOfMonth, startOfDay, parse, shortDate } from '../lib/date.js';
+import { readTargets, targetFor } from './Targets.js';
 
 // Goals with pace: are we ahead of or behind where we should be? Goals are set per
 // month; the card measures them over whatever period it's given (the Monthly
 // Report's selected range), scaling the targets when the period isn't a month.
-// Stored in app_kv `serigama.goals`. The views goal is also mirrored to the older
-// `serigama.goal.views` key so nothing that still reads it breaks.
+// Stored in app_kv `serigama.goals`. The VIEWS target is not set here: it lives on
+// the Targets page (views in the month), so there's one views target, not two.
 const KEY = 'serigama.goals';
-const LEGACY_VIEWS_KEY = 'serigama.goal.views';
 const DAY = 86400000;
 const AVG_MONTH_DAYS = 30.44;
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 export function readGoals() {
-  const g = readKV(KEY, {}) || {};
-  if (!g.views) g.views = Number(readKV(LEGACY_VIEWS_KEY, 0)) || 0;
-  return g;
+  return readKV(KEY, {}) || {};
 }
 
 const endOfDay = (d) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
@@ -76,7 +74,7 @@ export function windowActuals(contents, accountStats, w) {
 // `period` = { from, to } Dates from the page's range picker (omit for this month).
 // `actuals` = the page's own figures for that range ({ views, posts, er, followers });
 // any given (non-null) value replaces ours, so the card always agrees with the page.
-export function GoalsCard({ contents, accountStats, period, actuals }) {
+export function GoalsCard({ contents, accountStats, period, actuals, onNavigate }) {
   const [goals, setGoals] = useState(readGoals);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({});
@@ -90,8 +88,10 @@ export function GoalsCard({ contents, accountStats, period, actuals }) {
   const postsTarget = goals.postsPerWeek ? Math.round((goals.postsPerWeek * w.days) / 7) : 0;
   const when = w.wholeMonth ? 'this month' : 'this period';
 
+  // The views target for this month comes from the Targets page.
+  const ymOfWin = `${w.start.getFullYear()}-${String(w.start.getMonth() + 1).padStart(2, '0')}`;
+  const viewsTarget = w.wholeMonth ? targetFor(readTargets().views, ymOfWin) : null;
   const rows = [
-    { key: 'views', label: 'Views', target: target(goals.views), cur: act.views, fmt: withThousands, pace: true },
     { key: 'posts', label: 'Posts published', target: postsTarget, cur: act.posts, fmt: String, pace: true,
       note: goals.postsPerWeek ? `${goals.postsPerWeek} / week` : '' },
     { key: 'followers', label: 'New followers', target: target(goals.followers), cur: act.followers, fmt: (n) => (n < 0 ? '' : '+') + withThousands(n), pace: true,
@@ -102,16 +102,15 @@ export function GoalsCard({ contents, accountStats, period, actuals }) {
   const anySet = rows.some((r) => r.target);
 
   const startEdit = () => {
-    setDraft({ views: goals.views || '', postsPerWeek: goals.postsPerWeek || '', followers: goals.followers || '', er: goals.er || '' });
+    setDraft({ postsPerWeek: goals.postsPerWeek || '', followers: goals.followers || '', er: goals.er || '' });
     setErr('');
     setEditing(true);
   };
   const save = async () => {
     const num = (v, dec) => Math.max(0, dec ? Math.round((Number(v) || 0) * 10) / 10 : Math.round(Number(v) || 0));
-    const next = { views: num(draft.views), postsPerWeek: num(draft.postsPerWeek, true), followers: num(draft.followers), er: num(draft.er, true) };
+    const next = { postsPerWeek: num(draft.postsPerWeek, true), followers: num(draft.followers), er: num(draft.er, true) };
     try {
       await writeKV(KEY, next);
-      await writeKV(LEGACY_VIEWS_KEY, next.views);
       setGoals(next);
       setEditing(false);
     } catch (e) {
@@ -128,7 +127,6 @@ export function GoalsCard({ contents, accountStats, period, actuals }) {
 
     ${editing
       ? html`<div class="goal-edit">
-          <div class="field"><label>Views this month</label><input type="number" min="0" value=${draft.views} onInput=${dset('views')} placeholder="e.g. 500000" /></div>
           <div class="field"><label>Posts per week</label><input type="number" min="0" step="0.5" value=${draft.postsPerWeek} onInput=${dset('postsPerWeek')} placeholder="e.g. 5" /></div>
           <div class="field"><label>New followers this month</label><input type="number" min="0" value=${draft.followers} onInput=${dset('followers')} placeholder="e.g. 2000" /></div>
           <div class="field"><label>Engagement rate (%)</label><input type="number" min="0" step="0.1" value=${draft.er} onInput=${dset('er')} placeholder="e.g. 6" /></div>
@@ -140,7 +138,7 @@ export function GoalsCard({ contents, accountStats, period, actuals }) {
           </div>
         </div>`
       : !anySet
-      ? html`<p class="muted" style=${{ fontSize: '12.5px', marginTop: '8px', marginBottom: 0 }}>Set monthly targets for views, posting, followers and engagement — each bar shows how you're doing vs. where you should be by today.</p>`
+      ? html`<p class="muted" style=${{ fontSize: '12.5px', marginTop: '8px', marginBottom: 0 }}>Set monthly goals for posting, followers and engagement — each bar shows how you're doing vs. where you should be by today.</p>`
       : html`<div class="goal-grid">
           ${rows.filter((r) => r.target).map((r) => {
             const cur = r.cur;
@@ -171,5 +169,11 @@ export function GoalsCard({ contents, accountStats, period, actuals }) {
             </div>`;
           })}
         </div>`}
+    <div class="goal-views-link">
+      <span>📺 <strong>Views target</strong>${viewsTarget != null
+        ? html` for ${w.label}: <strong>${withThousands(viewsTarget)}</strong> views in the month`
+        : w.wholeMonth ? ` — none set for ${w.label}` : ' — set per month'} · tracked on the Targets page.</span>
+      ${onNavigate ? html`<button class="btn btn-sm btn-ghost no-print" onClick=${() => onNavigate('targets')}>Open Targets →</button>` : ''}
+    </div>
   </div>`;
 }

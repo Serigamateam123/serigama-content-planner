@@ -67,7 +67,7 @@ Every value is written to the cloud via `window.serigamaCloud.set(...)` (see §5
     `serigama.audience`, `serigama.monthlyfollowers`, `serigama.saves`, `serigama.newfollowers`;
   - planner data you enter in the app: `serigama.fundamental` (Content Funnel inspo clips),
     `serigama.contentmeta` (per-post funnel stage / pillar / product / assigned-to / hook / CTA,
-    keyed by content id), `serigama.goals` (monthly goals), `serigama.reports` (saved report snapshots),
+    keyed by content id), `serigama.goals` (monthly goals for posts / followers / engagement), `serigama.reports` (saved report snapshots),
     `serigama.targets` (the Targets page's views-in-the-month target: start month, start value,
     monthly growth % and any months set by hand).
 - `syncKV()` — **cloud-authoritative**: for each key, the cloud value is mirrored down to
@@ -83,8 +83,10 @@ They **throw** if the cloud write fails, and every screen shows that as an error
 silently kept on one browser only. `updateKVEntry()` re-reads the cloud copy before merging, so an
 edit on one device can't wipe entries added on another.
 
-**`src/features/Goals.js`** — `GoalsCard` writes `serigama.goals`, and mirrors the views goal to
-`serigama.goal.views` so older readers keep working.
+**`src/features/Goals.js`** — `GoalsCard` writes `serigama.goals` (posts per week, new followers,
+engagement rate). The **views** target is not set there: it comes from `serigama.targets` (the
+Targets page, *views in the month*), so there is one views target. The old `serigama.goal.views`
+key is no longer read.
 
 > Rule of thumb: **a manual figure is only "saved" once it is in `app_kv`.** localStorage alone is a
 > per-browser cache, nothing more.

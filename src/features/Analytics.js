@@ -169,7 +169,7 @@ export function Analytics({ contents, accounts, accountStats, metricsHistory, on
 
     <div class="kpi-row section-gap">
       ${[
-        { kind: 'views', label: rangeMode ? 'Views in range' : 'Total views', value: withThousands(kViews), sub: rangeMode ? 'in selected dates' : 'lifetime' },
+        { kind: 'views', label: rangeMode ? 'Views in range' : 'Views of posts published', value: withThousands(kViews), sub: rangeMode ? 'in selected dates' : 'all-time, posts in this range' },
         { kind: 'engagement', label: 'Engagement', value: withThousands(kEng), sub: kER + '% avg. rate' },
         { kind: 'published', label: rangeMode ? 'Active posts' : 'Published', value: kPosts, sub: rangeMode ? 'got views in range' : 'posts with numbers' },
       ].map((t) => html`<${Kpi}

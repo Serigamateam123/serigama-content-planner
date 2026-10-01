@@ -130,6 +130,29 @@ export function AnalyticsDashboard({ contents, accountStats, onNavigate, onRefre
   let bestFollMonth = null;
   if (mfoll) { const e = Object.entries(mfoll).map(([k, v]) => [k, Number(v)]).sort((x, y) => y[1] - x[1])[0]; if (e) bestFollMonth = { m: MONTHS_FULL[Number(e[0].split('-')[1]) - 1], net: e[1] }; }
 
+  // Views in the month (TikTok Studio's monthly figure) for the selected range —
+  // only when it covers whole calendar month(s), or this month so far, since
+  // Studio's numbers are per month. Same source as the Targets page.
+  const vim = (() => {
+    if (!r.from || !r.to) return null;
+    const studioMonths = (readKV('serigama.monthly', {}) || {}).months || {};
+    const f = localDay(r.from), t = localDay(r.to);
+    if (f.getDate() !== 1) return null;
+    const curYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    let sum = 0, partial = null;
+    for (let d = new Date(f); d <= t; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      if (monthEnd > t && ym !== curYm) return null; // range stops mid-month
+      const m = studioMonths[ym];
+      const name = MONTHS_FULL[d.getMonth()];
+      if (!m) return { missing: name };
+      sum += Number(m.views) || 0;
+      if (!m.complete) partial = `${name} 1–${m.days}`;
+    }
+    return { sum, partial };
+  })();
+
   // Freeze the current numbers so this period can be revisited later, exactly as presented.
   const saveReport = async () => {
     const id = 'r' + Date.now().toString(36);
@@ -139,7 +162,7 @@ export function AnalyticsDashboard({ contents, accountStats, onNavigate, onRefre
       label: r.label,
       from: r.from,
       to: r.to,
-      stats: { views: a.totalViews, engagement: a.totalEngagement, er: a.avgER, posts: a.publishedCount, perWeek, avgPer, followers, follInRange },
+      stats: { viewsInMonth: vim && vim.sum != null && !vim.partial ? vim.sum : null, views: a.totalViews, engagement: a.totalEngagement, er: a.avgER, posts: a.publishedCount, perWeek, avgPer, followers, follInRange },
       top: top3.map((c) => ({ title: c.title || '(untitled)', views: views(c), er: Math.round(erOf(c.metrics) * 10) / 10, url: c.post_url || '' })),
       funnel: breakdownBy(a.published, 'funnel_stage').map(({ label, posts, views: v, avgViews, er }) => ({ label, posts, views: v, avgViews, er })),
       pillar: breakdownBy(a.published, 'pillar').map(({ label, posts, views: v, avgViews, er }) => ({ label, posts, views: v, avgViews, er })),
@@ -228,13 +251,16 @@ export function AnalyticsDashboard({ contents, accountStats, onNavigate, onRefre
 
     <${GoalsCard} contents=${contents} accountStats=${accountStats}
       period=${r.from ? { from: localDay(r.from), to: localDay(r.to) } : null}
-      actuals=${r.from ? { views: a.totalViews, posts: a.publishedCount, er: a.publishedCount ? a.avgER : null, followers: follInRange } : null} />
+      actuals=${r.from ? { posts: a.publishedCount, er: a.publishedCount ? a.avgER : null, followers: follInRange } : null}
+      onNavigate=${onNavigate} />
 
     ${a.publishedCount === 0
       ? html`<div class="card card-pad section-gap"><${Empty} title="No posts in this range">Pick a wider time range, or connect TikTok to pull metrics.</${Empty}></div>`
       : html`
         <div class="section-gap" style=${{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
-          ${stat('👁', 'Total views', compact(a.totalViews), rangeKey === 'all' ? 'lifetime, all videos' : 'from posts in this range', deltaChip(a.totalViews, cmp && cmp.views))}
+          ${stat('📺', 'Views in the month', vim && vim.sum != null ? compact(vim.sum) : '—',
+            !vim ? 'pick a whole month to see this' : vim.missing ? `${vim.missing} not captured from TikTok Studio yet` : vim.partial ? `TikTok Studio · ${vim.partial} only` : 'TikTok Studio — same number as Targets')}
+          ${stat('👁', 'Views of posts published', compact(a.totalViews), rangeKey === 'all' ? 'all-time, all videos' : 'all-time views of the posts published in this range', deltaChip(a.totalViews, cmp && cmp.views))}
           ${stat('💬', 'Engagement', compact(a.totalEngagement), `${a.avgER}% avg. rate${erWord ? ' — ' + erWord : ''}`, deltaChip(a.totalEngagement, cmp && cmp.eng))}
           ${stat('👥', 'Followers', withThousands(followers), follInRange != null ? `+${withThousands(follInRange)} gained (${r.label.toLowerCase()})` : 'current total', follDeltaPct != null ? html`<span style=${{ color: follDeltaPct >= 0 ? '#0f7a4d' : '#b4232a', fontWeight: 600, fontSize: '11.5px' }}>${follDeltaPct >= 0 ? '▲' : '▼'} ${Math.abs(follDeltaPct)}% <span class="muted" style=${{ fontWeight: 400 }}>vs prev</span></span>` : '')}
           ${stat('🎬', 'Posts published', withThousands(a.publishedCount), `~${perWeek} / week · ${compact(avgPer)} avg views`, deltaChip(a.publishedCount, cmp && cmp.posts, true))}
@@ -381,7 +407,8 @@ function ReportView({ rep, onBack, onDelete }) {
     </div>
 
     <div class="kpi-row">
-      ${tile('Total views', compact(st.views), rep.comparePct != null ? `${rep.comparePct >= 0 ? '▲' : '▼'} ${Math.abs(rep.comparePct)}% vs period before` : '')}
+      ${st.viewsInMonth != null ? tile('Views in the month', compact(st.viewsInMonth), 'TikTok Studio') : ''}
+      ${tile('Views of posts published', compact(st.views), rep.comparePct != null ? `${rep.comparePct >= 0 ? '▲' : '▼'} ${Math.abs(rep.comparePct)}% vs period before` : '')}
       ${tile('Engagement', compact(st.engagement), `${st.er}% avg. rate`)}
       ${tile('Followers', withThousands(st.followers), st.follInRange != null ? `+${withThousands(st.follInRange)} gained` : '')}
       ${tile('Posts published', st.posts, `~${st.perWeek} / week · ${compact(st.avgPer)} avg views`)}
