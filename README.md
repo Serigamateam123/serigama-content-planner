@@ -18,9 +18,10 @@ Six screens, in two groups:
   content works (by funnel stage / pillar / product), and **saved report snapshots**.
 - **Targets** — the team's monthly *views in the month* target (563K in Oct 2026, +5% a month
   from November; Jan–Sep 2026 get faded *reference* targets counted backwards, for comparison only).
-  *This month — pace* shows views added up day by day against a straight line to the target, with
-  ahead/behind, views needed per day and a forecast; *Month by month* shows green/red bars vs target
-  with an editable table; a *Weekly check* compares last week and this week for the Friday meeting.
+  *Year — Jan to Dec* (the main chart) shows green/red bars vs the target line with an editable
+  table; *This month — pace* shows views added up day by day against a straight line to the target,
+  with ahead/behind, views needed per day and a forecast; a *Weekly check* compares last week and
+  this week for the Friday meeting.
 - **Post Performance** — every post's numbers in detail, trends, hashtags, followers, audience.
 
 ---

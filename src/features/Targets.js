@@ -6,9 +6,10 @@ import { compact, withThousands, periodTrend } from '../lib/metrics.js';
 import { shortMonth, dayKey, addDays, startOfWeek } from '../lib/date.js';
 
 // Targets — a monthly "views in the month" target the whole team can follow.
-//  • Pace (main view): views so far this month, added up day by day, against a
+//  • Year (main view): Jan–Dec, one bar per month (green hit / red missed /
+//    amber in progress) vs the target line, with year arrows.
+//  • This month — pace: views so far this month, added up day by day, against a
 //    straight line from 0 to the target — ahead/behind and "needed per day".
-//  • Month by month: one bar per month (green hit / red missed) vs the target.
 //  • Weekly check: last week and this week vs their share of the target.
 // The target starts at a set month and grows by a fixed % each month; any month
 // can be overridden. Stored in app_kv `serigama.targets`.
@@ -21,9 +22,6 @@ const KEY = 'serigama.targets';
 // % (Sep = 563K ÷ 1.05, …) back to `referenceFrom` — shown lighter, set
 // afterwards, never counted in the official hit record. '' turns them off.
 const DEFAULT_VIEWS_TARGET = { startMonth: '2026-10', start: 563000, growthPct: 5, overrides: {}, referenceFrom: '2026-01' };
-const FUTURE_MONTHS = 3; // upcoming months shown in the month-by-month view
-const MIN_MONTHS = 6;
-const MAX_PAST_MONTHS = 11; // month-by-month shows at most a year back from now
 const OUTLIER_FACTOR = 2; // a bar this many × above the targets is drawn capped
 
 // --- month helpers ("YYYY-MM" keys) ------------------------------------------
@@ -55,7 +53,7 @@ const isReference = (cfg, ym) => ym < cfg.startMonth;
 
 export function Targets({ metricsHistory }) {
   const [targets, setTargets] = useState(readTargets);
-  const [view, setView] = useState('pace'); // 'pace' | 'months'
+  const [view, setView] = useState('months'); // 'months' (Jan–Dec, default) | 'pace'
   const [editing, setEditing] = useState(false);
   const [rowEdit, setRowEdit] = useState(null); // { ym, value }
   const [err, setErr] = useState('');
@@ -67,6 +65,7 @@ export function Targets({ metricsHistory }) {
   const firstTargetYm = [cfg.startMonth, cfg.referenceFrom, ...Object.keys(cfg.overrides || {})].filter(Boolean).sort()[0];
   const latestPaceYm = curYm > firstTargetYm ? curYm : firstTargetYm;
   const [paceYm, setPaceYm] = useState(latestPaceYm);
+  const [year, setYear] = useState(now.getFullYear()); // year shown in the Jan–Dec view
 
   // Views gained per day across all videos, from the daily sync snapshots.
   const daily = new Map(periodTrend(metricsHistory || [], 'daily').map((p) => [p.key, p.value]));
@@ -110,14 +109,16 @@ export function Targets({ metricsHistory }) {
   for (let ym = firstTargetYm; ym <= latestPaceYm; ym = addMonths(ym, 1)) paceMonths.push(ym);
   const pi = paceMonths.indexOf(paceYm);
 
-  // Month by month: from the first target month to a few months ahead.
-  const firstShown = [firstTargetYm, addMonths(latestPaceYm, -MAX_PAST_MONTHS)].sort()[1];
-  let lastShown = addMonths(latestPaceYm, FUTURE_MONTHS);
-  if (monthsBetween(firstShown, lastShown) < MIN_MONTHS - 1) lastShown = addMonths(firstShown, MIN_MONTHS - 1);
-  const months = [];
-  for (let ym = firstShown; ym <= lastShown; ym = addMonths(ym, 1)) months.push(progress(ym));
-  // The official record only counts months from the plan's start.
-  const judged = months.filter((m) => m.final && m.target != null && !m.reference);
+  // Year view: January to December of the chosen year.
+  const months = Array.from({ length: 12 }, (_, i) => progress(`${year}-${String(i + 1).padStart(2, '0')}`));
+  const minYear = Number(firstTargetYm.slice(0, 4));
+  const maxYear = Math.max(Number(cfg.startMonth.slice(0, 4)), now.getFullYear()) + 1;
+  // The official record counts every finished month from the plan's start (all years).
+  const judged = [];
+  for (let ym = cfg.startMonth; ym < curYm; ym = addMonths(ym, 1)) {
+    const m = progress(ym);
+    if (m.final && m.target != null && !m.reference) judged.push(m);
+  }
   const hits = judged.filter((m) => m.done >= m.target).length;
   const last3 = judged.slice(-3);
   const holdHint = last3.length === 3 && last3.every((m) => m.done < m.target);
@@ -203,15 +204,20 @@ export function Targets({ metricsHistory }) {
 
     ${holdHint ? html`<div class="alert section-gap">
       <div class="alert-dot"><${Icon} name="alert" size=${15} /></div>
-      <div class="alert-text"><b>3 months below target in a row.</b> Consider holding next month's target flat (Month by month → ✏️) and reviewing the content plan before adding another ${cfg.growthPct}%.</div>
+      <div class="alert-text"><b>3 months below target in a row.</b> Consider holding next month's target flat (Year view → ✏️ in the table) and reviewing the content plan before adding another ${cfg.growthPct}%.</div>
     </div>` : ''}
 
     <div class="card card-pad section-gap">
       <div class="chart-head chart-head-stack">
         <div class="seg no-print">
+          <button class=${view === 'months' ? 'active' : ''} onClick=${() => setView('months')}>Year — Jan to Dec</button>
           <button class=${view === 'pace' ? 'active' : ''} onClick=${() => setView('pace')}>This month — pace</button>
-          <button class=${view === 'months' ? 'active' : ''} onClick=${() => setView('months')}>Month by month</button>
         </div>
+        ${view === 'months' ? html`<div class="cal-nav no-print">
+          <button class="icon-btn" disabled=${year <= minYear} onClick=${() => setYear(year - 1)} aria-label="Previous year"><${Icon} name="chevronLeft" size=${16} /></button>
+          <button class="btn btn-sm" onClick=${() => setYear(now.getFullYear())}>${year}</button>
+          <button class="icon-btn" disabled=${year >= maxYear} onClick=${() => setYear(year + 1)} aria-label="Next year"><${Icon} name="chevronRight" size=${16} /></button>
+        </div>` : ''}
         ${view === 'pace' && paceMonths.length > 1 ? html`<div class="cal-nav no-print">
           <button class="icon-btn" disabled=${pi <= 0} onClick=${() => setPaceYm(paceMonths[pi - 1])} aria-label="Previous month"><${Icon} name="chevronLeft" size=${16} /></button>
           <button class="btn btn-sm" onClick=${() => setPaceYm(latestPaceYm)}>${ymLabel(paceYm)}</button>
