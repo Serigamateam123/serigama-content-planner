@@ -2,6 +2,7 @@
 // takes plain arrays of content/campaigns and returns numbers/objects — no I/O.
 
 import { startOfMonth, endOfMonth, startOfDay, addDays, dayKey, parse, isSameMonth } from './date.js';
+import { PRODUCTION_STATUSES, FUNNELS } from './constants.js';
 
 export function engagementOf(m) {
   if (!m) return 0;
@@ -228,8 +229,9 @@ export function dashboard(contents, campaigns, now = new Date(), range = null) {
     };
   }
 
+  // Past its planned date but not posted: scheduled, or still mid-production.
   const overdue = contents.filter(
-    (c) => c.status === 'scheduled' && parse(c.scheduled_at) && parse(c.scheduled_at) < now
+    (c) => (c.status === 'scheduled' || PRODUCTION_STATUSES.includes(c.status)) && parse(c.scheduled_at) && parse(c.scheduled_at) < now
   );
   const missingCaption = contents.filter((c) => c.status === 'scheduled' && !c.has_final_caption);
 
@@ -237,7 +239,7 @@ export function dashboard(contents, campaigns, now = new Date(), range = null) {
   const next7 = contents
     .filter((c) => {
       const d = parse(c.scheduled_at);
-      return d && d >= startOfDay(now) && d < in7 && c.status !== 'published';
+      return d && d >= startOfDay(now) && d < in7 && c.status !== 'published' && c.status !== 'takedown';
     })
     .sort((a, b) => parse(a.scheduled_at) - parse(b.scheduled_at));
 
@@ -263,7 +265,19 @@ export function dashboard(contents, campaigns, now = new Date(), range = null) {
     actionNeeded: overdue.length + missingCaption.length,
     next7,
     campaignProgress,
+    pipeline: pipelineOf(contents),
   };
+}
+
+// Posts at each production stage (not date-filtered — it's the live work queue).
+const PIPELINE_STAGES = ['idea', 'scripting', 'filming', 'editing', 'ready', 'scheduled'];
+function pipelineOf(contents) {
+  return PIPELINE_STAGES.map((id) => ({
+    id,
+    items: contents
+      .filter((c) => c.status === id || (id === 'idea' && c.status === 'draft'))
+      .sort((a, b) => (parse(a.scheduled_at) || 8e15) - (parse(b.scheduled_at) || 8e15)),
+  }));
 }
 
 // Auto-generated, plain-language notes about performance — things to act on.
@@ -528,6 +542,27 @@ export function analytics(contents, campaigns, f = {}, stats = []) {
     followerGain: followersGainedPerVideo(published, stats),
     trend: trend(published, f.grain || 'monthly'),
   };
+}
+
+// Performance of published posts grouped by a planning field (funnel_stage,
+// pillar, product). Untagged posts are grouped last so it's clear how much of
+// the account isn't tagged yet.
+export function breakdownBy(published, field) {
+  const groups = new Map();
+  for (const c of published) {
+    const raw = (c[field] || '').trim();
+    const k = raw || '__none';
+    const g = groups.get(k) || { key: k, posts: 0, views: 0, engagement: 0 };
+    g.posts++;
+    g.views += Number(c.metrics && c.metrics.views) || 0;
+    g.engagement += engagementOf(c.metrics);
+    groups.set(k, g);
+  }
+  const label = (k) => (k === '__none' ? 'Not tagged' : field === 'funnel_stage' ? ((FUNNELS.find((f) => f.id === k) || {}).name || k) : k);
+  const order = field === 'funnel_stage' ? (k) => { const i = FUNNELS.findIndex((f) => f.id === k); return i < 0 ? 99 : i; } : null;
+  return [...groups.values()]
+    .map((g) => ({ ...g, label: label(g.key), avgViews: Math.round(g.views / g.posts), er: g.views ? round1((g.engagement / g.views) * 100) : 0 }))
+    .sort((a, b) => (a.key === '__none') - (b.key === '__none') || (order ? order(a.key) - order(b.key) : b.views - a.views));
 }
 
 // Group published content into time buckets summing views, for the line chart.

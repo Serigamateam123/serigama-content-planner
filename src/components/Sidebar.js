@@ -2,11 +2,14 @@ import { html } from '../lib/html.js';
 import { Icon } from './ui.js';
 
 const NAV = [
+  { section: 'Plan' },
   { id: 'dashboard', label: 'Content Dashboard', icon: 'dashboard' },
   { id: 'calendar', label: 'Content Calendar', icon: 'calendar' },
-  { id: 'fundamental', label: 'Content Funnel', icon: 'campaign' },
-  { id: 'overview', label: 'Analytics Dashboard', icon: 'analytics' },
-  { id: 'analytics', label: 'Analytics', icon: 'analytics' },
+  { id: 'campaigns', label: 'Campaigns', icon: 'campaign' },
+  { id: 'fundamental', label: 'Content Funnel', icon: 'funnel' },
+  { section: 'Report' },
+  { id: 'overview', label: 'Monthly Report', icon: 'report' },
+  { id: 'analytics', label: 'Post Performance', icon: 'analytics' },
 ];
 
 export function Sidebar({ route, onNavigate, onNew, config, session, isCloud, onSetPassword, onSignOut }) {
@@ -24,7 +27,9 @@ export function Sidebar({ route, onNavigate, onNew, config, session, isCloud, on
 
     <nav class="nav">
       ${NAV.map(
-        (n) => html`<button
+        (n) => n.section
+          ? html`<div class="nav-label">${n.section}</div>`
+          : html`<button
           class=${'nav-item' + (route === n.id ? ' active' : '')}
           onClick=${() => onNavigate(n.id)}
         >

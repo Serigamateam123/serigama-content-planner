@@ -62,9 +62,12 @@ Every value is written to the cloud via `window.serigamaCloud.set(...)` (see §5
 
 **`src/app.js`**
 
-- `KV_KEYS` — the six manual keys:
-  `serigama.monthly` (months + `trafficSourceOverall`), `serigama.goal.views`,
-  `serigama.audience`, `serigama.monthlyfollowers`, `serigama.saves`, `serigama.newfollowers`.
+- `KV_KEYS` — every key mirrored between the cloud and the browser:
+  - the six Studio figures: `serigama.monthly` (months + `trafficSourceOverall`), `serigama.goal.views`,
+    `serigama.audience`, `serigama.monthlyfollowers`, `serigama.saves`, `serigama.newfollowers`;
+  - planner data you enter in the app: `serigama.fundamental` (Content Funnel inspo clips),
+    `serigama.contentmeta` (per-post funnel stage / pillar / product / assigned-to / hook / CTA,
+    keyed by content id), `serigama.goals` (monthly goals), `serigama.reports` (saved report snapshots).
 - `syncKV()` — **cloud-authoritative**: for each key, the cloud value is mirrored down to
   localStorage; a key the cloud does not have yet is seeded **once** from this browser.
   Runs before the analytics views read localStorage.
@@ -73,7 +76,13 @@ Every value is written to the cloud via `window.serigamaCloud.set(...)` (see §5
 
 **`src/lib/supabase-store.js`** — `getKV()` / `setKV()` read/write `app_kv` (RLS scoped to the user).
 
-**`src/features/Analytics.js`** — `GoalCard` writes the monthly-views goal to the cloud via `setKV` too.
+**`src/lib/kv.js`** — `writeKV()` / `updateKVEntry()` are how the app's own screens save these keys.
+They **throw** if the cloud write fails, and every screen shows that as an error — a change is never
+silently kept on one browser only. `updateKVEntry()` re-reads the cloud copy before merging, so an
+edit on one device can't wipe entries added on another.
+
+**`src/features/Goals.js`** — `GoalsCard` writes `serigama.goals`, and mirrors the views goal to
+`serigama.goal.views` so older readers keep working.
 
 > Rule of thumb: **a manual figure is only "saved" once it is in `app_kv`.** localStorage alone is a
 > per-browser cache, nothing more.

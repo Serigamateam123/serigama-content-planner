@@ -3,12 +3,20 @@
 A simple, private planner for your social content — a **calendar**, **campaign tracker**, and
 **performance dashboard** in one page. Built to run with no build tools and no monthly fees.
 
-Four screens:
+Six screens, in two groups:
 
-- **Dashboard** — what's due, what needs attention, and how each campaign is progressing.
-- **Content Calendar** — month/week grid + an unscheduled backlog. Click any day to add a post.
+**Plan**
+- **Content Dashboard** — what's due, what needs attention, the production pipeline
+  (Idea → Scripting → Filming → Editing → Ready → Scheduled), and campaign progress.
+- **Content Calendar** — month/week grid + an unscheduled backlog. Filter by platform, status or
+  funnel stage; drag a post to another day to reschedule it.
 - **Campaigns** — group content and track progress toward a target (e.g. 9 of 24 done).
-- **Analytics** — reach, engagement, average engagement rate, a views-trend chart, and PDF export.
+- **Content Funnel** — an inspiration library by funnel stage; turn any clip into a planned post.
+
+**Report**
+- **Monthly Report** — the one-glance summary for meetings: goals, headline numbers, what kind of
+  content works (by funnel stage / pillar / product), and **saved report snapshots**.
+- **Post Performance** — every post's numbers in detail, trends, hashtags, followers, audience.
 
 ---
 
@@ -84,13 +92,15 @@ Site URL / Redirect URLs**, so the email sign-in link brings you back to the rig
 ## 4. Everyday use
 
 - **Add a post:** click **New content** (or a day on the calendar). Give it a title, platform,
-  campaign, and a date/time. Leave the date blank to park it in the **unscheduled backlog**.
-- **Mark it done:** open the post and set status to **Published** — it then counts toward your
-  campaign progress and shows up in Analytics.
-- **Enter numbers:** on **Analytics** click **Update numbers** and type each post's reach / views /
+  funnel stage, pillar, product, who it's assigned to, and a date/time. Leave the date blank to park
+  it in the **unscheduled backlog**.
+- **Move it through production:** update the status as you go — Scripting → Filming → Editing →
+  Ready → Scheduled. The Dashboard's pipeline shows where everything is and flags anything late.
+- **Mark it done:** set status to **Published** — it then counts toward campaign progress and reports.
+- **Enter numbers:** on **Post Performance** click **Update numbers** and type each post's reach / views /
   likes / comments / shares. The engagement rate is calculated for you.
-- **Report:** on **Analytics** click **Export PDF** (it uses your browser's “Save as PDF”), or just
-  screenshot the dashboard to send to whoever you report to.
+- **Report:** on **Monthly Report** set your monthly goals, then click **Save this report** before a
+  meeting to keep a snapshot, and **Print / PDF** to send it (uses your browser's "Save as PDF").
 
 Reset the sample data any time (demo mode): open the browser console on the page and run
 `localStorage.removeItem('serigama-planner-v1')`, then reload.

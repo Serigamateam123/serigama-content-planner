@@ -3,8 +3,8 @@ import { useState } from 'preact/hooks';
 import { Kpi, Icon, Empty } from '../components/ui.js';
 import { TrendChart } from './TrendChart.js';
 import { TikTokConnect } from './TikTokConnect.js';
+import { GoalsCard } from './Goals.js';
 import { analytics, compact, withThousands, erOf, engagementOf, periodMetrics, periodTrend, daysOfHistory, applyFilters, engagementExtras } from '../lib/metrics.js';
-import { store } from '../lib/store.js';
 
 // Unicode-block sparkline from a list of numbers (shared by monthly + engagement).
 function sparkline(vals) {
@@ -119,7 +119,7 @@ export function Analytics({ contents, campaigns, accounts, accountStats, metrics
     <div class="page-head">
       <div>
         <div class="eyebrow">Performance</div>
-        <h1 class="page-title">Analytics</h1>
+        <h1 class="page-title">Post Performance</h1>
         <div class="page-sub">${a.publishedCount} published ${a.publishedCount === 1 ? 'post' : 'posts'} with numbers in this view</div>
       </div>
       <div class="page-actions">
@@ -215,7 +215,7 @@ export function Analytics({ contents, campaigns, accounts, accountStats, metrics
       : null}
 
     ${sel === 'views' ? html`
-      <${GoalCard} contents=${contents} />
+      <${GoalsCard} contents=${contents} accountStats=${accountStats} />
 
       <${MonthlyReport} contents=${contents} followers=${a.followerGrowth ? a.followerGrowth.current : 0} />
 
@@ -285,7 +285,7 @@ function FollowerMonthlyCard() {
   const avg = Math.round(total / months.length);
 
   return html`<div class="card card-pad section-gap">
-    <div class="card-title">Monthly follower growth <span class="muted" style=${{ fontWeight: 400 }}>net new followers · ${label(months[0].key).slice(0, 3)}–${label(months[months.length - 1].key).slice(0, 3)} 2026</span></div>
+    <div class="card-title">Monthly follower growth <span class="muted" style=${{ fontWeight: 400 }}>net new followers · ${label(months[0].key)} – ${label(months[months.length - 1].key)}</span></div>
     <div style=${{ overflowX: 'auto' }}>
       <table class="atable">
         <thead><tr>
@@ -431,69 +431,13 @@ function FollowerCard({ fg, gains, posts, onClose }) {
         <div class="eng-notes" style=${{ marginTop: '14px', borderLeft: '3px solid var(--gold-strong)' }}>
           <div class="eng-notes-title">📝 What your audience is telling you</div>
           <div class="note">Two-thirds of your followers are <strong>women (${aud.gender[0].pct}%)</strong>, and <strong>${(aud.age[0].pct + aud.age[1].pct).toFixed(1)}%</strong> are aged <strong>25–44</strong> — working adults with spending power, not teens.</div>
-          <div class="note"><strong>${aud.locations[0].pct}% are in Malaysia.</strong> Malay-language content is clearly the right call; your small Brunei + Singapore slices share the language too.</div>
+          <div class="note"><strong>${aud.locations[0].pct}% are in ${aud.locations[0].name}.</strong> Malay-language content is clearly the right call; your small Brunei + Singapore slices share the language too.</div>
           <div class="note">🎯 Your sweet spot: <strong>Malay workplace/relatable humour aimed at working women 25–44.</strong> That's exactly who your best posts already reach — keep feeding them.</div>
         </div>
         <div class="muted" style=${{ fontSize: '11px', marginTop: '8px' }}>ℹ️ TikTok only breaks audience location down to <strong>country</strong>, not city — so city-level data isn't available here.</div>
       </div>`;
     })() : ''}
     ${playing ? html`<${VideoModal} video=${playing} onClose=${() => setPlaying(null)} />` : ''}
-  </div>`;
-}
-
-// Monthly views goal with pace: are we ahead of or behind where we should be today?
-function GoalCard({ contents }) {
-  const KEY = 'serigama.goal.views';
-  const [goal, setGoal] = useState(() => Number(localStorage.getItem(KEY)) || 0);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-
-  const now = new Date();
-  const start = startOfMonth(now);
-  let views = 0;
-  let posts = 0;
-  for (const c of contents) {
-    if (c.status !== 'published' || !c.metrics) continue;
-    const d = parse(c.published_at);
-    if (d && d >= start) {
-      views += Number(c.metrics.views) || 0;
-      posts++;
-    }
-  }
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const elapsed = now.getDate() / daysInMonth;
-  const pct = goal ? Math.min(100, Math.round((views / goal) * 100)) : 0;
-  const onTrack = goal ? views >= goal * elapsed : true;
-  const projected = elapsed ? Math.round(views / elapsed) : 0;
-
-  const save = () => {
-    const v = Math.max(0, Math.round(Number(draft) || 0));
-    localStorage.setItem(KEY, String(v));
-    if (store.setKV) store.setKV(KEY, String(v)).catch(() => {}); // sync to cloud so other devices see it
-    setGoal(v);
-    setEditing(false);
-  };
-
-  return html`<div class="card card-pad section-gap">
-    <div style=${{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div class="card-title">Monthly views goal</div>
-      ${editing
-        ? html`<span style=${{ display: 'flex', gap: '6px' }}>
-            <input type="number" min="0" value=${draft} onInput=${(e) => setDraft(e.target.value)} style=${{ width: '130px' }} />
-            <button class="btn btn-sm btn-gold" onClick=${save}>Save</button>
-          </span>`
-        : html`<button class="btn btn-sm" onClick=${() => { setDraft(String(goal || '')); setEditing(true); }}>${goal ? 'Edit goal' : 'Set goal'}</button>`}
-    </div>
-    ${goal
-      ? html`<div>
-          <div style=${{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '10px', marginBottom: '5px' }}>
-            <span><strong>${withThousands(views)}</strong> of ${withThousands(goal)} views this month</span>
-            <span style=${{ color: onTrack ? '#0f7a4d' : '#b4232a', fontWeight: 600 }}>${onTrack ? 'On track' : 'Behind pace'} · ${pct}%</span>
-          </div>
-          <div class="progress"><i style=${{ width: Math.max(2, pct) + '%', background: onTrack ? 'var(--green)' : 'var(--amber)' }}></i></div>
-          <div class="muted" style=${{ fontSize: '12px', marginTop: '7px' }}>${posts} ${posts === 1 ? 'post' : 'posts'} so far · at this pace you'll reach ~${withThousands(projected)} views by month end.</div>
-        </div>`
-      : html`<p class="muted" style=${{ fontSize: '12.5px', marginTop: '8px', marginBottom: 0 }}>Set a monthly views target to track pace — the bar shows how you're doing vs. where you should be by today.</p>`}
   </div>`;
 }
 
@@ -714,6 +658,16 @@ function viewsInsights(published) {
 //  (A) Views that HAPPENED in the month — the real TikTok Studio number (from
 //      localStorage 'serigama.monthly', captured manually from Studio).
 //  (B) Views EARNED by the videos published that month — all-time, from app data.
+// "Jan – Sep 2026", or "Nov 2026 – Feb 2027" when the range crosses a year.
+function monthSpan(firstKey, lastKey) {
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const [y1, m1] = firstKey.split('-');
+  const [y2, m2] = lastKey.split('-');
+  const a = MON[Number(m1) - 1], b = MON[Number(m2) - 1];
+  if (y1 !== y2) return `${a} ${y1} – ${b} ${y2}`;
+  return firstKey === lastKey ? `${a} ${y1}` : `${a} – ${b} ${y1}`;
+}
+
 function MonthlyReport({ contents, followers }) {
   let stored = null;
   try { stored = JSON.parse(localStorage.getItem('serigama.monthly') || 'null'); } catch (e) { stored = null; }
@@ -739,7 +693,7 @@ function MonthlyReport({ contents, followers }) {
   const postsSpark = spark(rows.map((r) => r.pubV));
 
   return html`<div class="card card-pad section-gap">
-    <div class="card-title">Monthly performance <span class="muted" style=${{ fontWeight: 400 }}>${rows[0].short}–${last.short} 2026</span></div>
+    <div class="card-title">Monthly performance <span class="muted" style=${{ fontWeight: 400 }}>${monthSpan(keys[0], keys[keys.length - 1])}</span></div>
     <div style=${{ overflowX: 'auto' }}>
       <table class="atable">
         <thead><tr>

@@ -5,13 +5,21 @@ import { store, isCloud, config } from './lib/store.js';
 import { Sidebar } from './components/Sidebar.js';
 import { Dashboard } from './features/Dashboard.js';
 import { Calendar } from './features/Calendar.js';
+import { Campaigns } from './features/Campaigns.js';
 import { Fundamental } from './features/Fundamental.js';
 import { Analytics } from './features/Analytics.js';
 import { AnalyticsDashboard } from './features/AnalyticsDashboard.js';
 import { ContentModal } from './features/ContentModal.js';
 import { Login } from './features/Login.js';
+import { readKV, updateKVEntry } from './lib/kv.js';
 
-const ROUTES = ['dashboard', 'calendar', 'fundamental', 'overview', 'analytics'];
+const ROUTES = ['dashboard', 'calendar', 'campaigns', 'fundamental', 'overview', 'analytics'];
+
+// Planning fields kept per post in app_kv (key `serigama.contentmeta`, map of
+// content id -> fields) rather than as columns, so they work without a database
+// migration. Merged onto each content on load; split back out on save.
+const META_KEY = 'serigama.contentmeta';
+const META_FIELDS = ['funnel_stage', 'pillar', 'product', 'assignee', 'hook', 'cta'];
 
 // Helper so a capture can be written straight to the cloud (and mirrored locally).
 // Used when refreshing the manually-pulled Studio figures.
@@ -40,6 +48,9 @@ const KV_KEYS = [
   'serigama.saves',
   'serigama.newfollowers',
   'serigama.fundamental',
+  'serigama.contentmeta',
+  'serigama.goals',
+  'serigama.reports',
 ];
 
 // Supabase (app_kv) is the SOURCE OF TRUTH for these manually-captured figures.
@@ -72,7 +83,8 @@ function App() {
   const [session, setSession] = useState(null);
   const [route, setRoute] = useState(routeFromHash());
   const [data, setData] = useState({ contents: [], campaigns: [], accounts: [], accountStats: [], metricsHistory: [], studioMetrics: [] });
-  const [modal, setModal] = useState(null); // { content, defaultDate } | null
+  const [modal, setModal] = useState(null); // { content, defaultDate, prefill } | null
+  const [dataVersion, setDataVersion] = useState(0); // bumps after each load so KV-backed views re-read
   const [loadingData, setLoadingData] = useState(false);
   const [pwModal, setPwModal] = useState(false); // "set password" dialog
 
@@ -112,33 +124,53 @@ function App() {
     let newFollowersBy = {};
     try { savesBy = JSON.parse(localStorage.getItem('serigama.saves') || '{}'); } catch (e) { savesBy = {}; }
     try { newFollowersBy = JSON.parse(localStorage.getItem('serigama.newfollowers') || '{}'); } catch (e) { newFollowersBy = {}; }
+    const metaBy = readKV(META_KEY, {});
     const withStudio = contents.map((c) => ({
       ...c,
+      ...(metaBy[c.id] || {}),
       studio: c.external_id ? studioBy.get(String(c.external_id)) || null : null,
       saves: c.external_id ? Number(savesBy[String(c.external_id)]) || 0 : 0,
       newFollowers: c.external_id && newFollowersBy[String(c.external_id)] != null ? Number(newFollowersBy[String(c.external_id)]) : null,
     }));
     setData({ contents: withStudio, campaigns, accounts, accountStats, metricsHistory, studioMetrics });
+    setDataVersion((v) => v + 1);
     setLoadingData(false);
   }, []);
 
   useEffect(() => { if (session) loadData(); }, [session, loadData]);
 
   // --- mutations (optimistic-ish: mutate then reload) ---
+  // Throws on failure so the form can show the error and keep what was typed.
   const saveContent = async (patch, id) => {
-    if (id) await store.updateContent(id, patch);
-    else await store.createContent(patch);
+    const row = { ...patch };
+    const meta = {};
+    for (const k of META_FIELDS) { if (k in row) { meta[k] = row[k]; delete row[k]; } }
+    let contentId = id;
+    if (id) await store.updateContent(id, row);
+    else contentId = (await store.createContent(row)).id;
+    await updateKVEntry(META_KEY, contentId, meta);
     setModal(null);
     await loadData();
   };
-  const deleteContent = async (id) => { await store.deleteContent(id); setModal(null); await loadData(); };
+  const deleteContent = async (id) => {
+    await store.deleteContent(id);
+    try { await updateKVEntry(META_KEY, id, null); } catch (e) { /* orphaned meta is harmless */ }
+    setModal(null);
+    await loadData();
+  };
+  // Calendar drag & drop: move a post to another day (or back to the backlog with null).
+  const rescheduleContent = async (id, scheduledAt) => {
+    try { await store.updateContent(id, { scheduled_at: scheduledAt }); }
+    catch (e) { alert('Could not move that post: ' + (e.message || e)); }
+    await loadData();
+  };
   const saveMetrics = async (id, m) => { await store.saveMetrics(id, m); await loadData(); };
   const createCampaign = async (d) => { await store.createCampaign(d); await loadData(); };
   const updateCampaign = async (id, d) => { await store.updateCampaign(id, d); await loadData(); };
   const deleteCampaign = async (id) => { await store.deleteCampaign(id); await loadData(); };
 
-  const openNew = (defaultDate = null) => setModal({ content: null, defaultDate });
-  const openEdit = (content) => setModal({ content, defaultDate: null });
+  const openNew = (defaultDate = null, prefill = null) => setModal({ content: null, defaultDate, prefill });
+  const openEdit = (content) => setModal({ content, defaultDate: null, prefill: null });
 
   if (!ready) return html`<div class="boot">Loading…</div>`;
   if (isCloud && !session) return html`<${Login} config=${config}
@@ -165,9 +197,12 @@ function App() {
               onNew=${() => openNew()} onOpen=${openEdit} onNavigate=${navigate} onRefresh=${loadData} />`
           : route === 'calendar'
           ? html`<${Calendar} contents=${contents} campaigns=${campaigns}
-              onNew=${() => openNew()} onOpen=${openEdit} onNewOnDate=${(d) => openNew(d)} />`
+              onNew=${() => openNew()} onOpen=${openEdit} onNewOnDate=${(d) => openNew(d)} onReschedule=${rescheduleContent} />`
+          : route === 'campaigns'
+          ? html`<${Campaigns} contents=${contents} campaigns=${campaigns}
+              onCreate=${createCampaign} onUpdate=${updateCampaign} onDelete=${deleteCampaign} onOpenContent=${openEdit} />`
           : route === 'fundamental'
-          ? html`<${Fundamental} />`
+          ? html`<${Fundamental} contents=${contents} dataVersion=${dataVersion} onPlan=${(prefill) => openNew(null, prefill)} />`
           : route === 'overview'
           ? html`<${AnalyticsDashboard} contents=${contents} campaigns=${campaigns} accounts=${accounts} accountStats=${accountStats}
               onNavigate=${navigate} onRefresh=${loadData} />`
@@ -179,6 +214,8 @@ function App() {
       ? html`<${ContentModal}
           content=${modal.content}
           defaultDate=${modal.defaultDate}
+          prefill=${modal.prefill}
+          contents=${contents}
           campaigns=${campaigns}
           accounts=${accounts}
           onSubmit=${saveContent}

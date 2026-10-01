@@ -1,7 +1,8 @@
 import { html } from '../lib/html.js';
-import { useState } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import { Icon, Modal, Empty } from '../components/ui.js';
-import { store, isCloud } from '../lib/store.js';
+import { FUNNELS } from '../lib/constants.js';
+import { readKV, writeKV } from '../lib/kv.js';
 
 // Fundamental Content — an inspiration library organised by marketing funnel.
 // Three funnels (top / middle / bottom); each holds inspo clips (a TikTok link
@@ -10,29 +11,11 @@ import { store, isCloud } from '../lib/store.js';
 // the manually-captured Studio figures.
 const KV = 'serigama.fundamental';
 
-const FUNNELS = [
-  { id: 'top', emoji: '🔝', name: 'Top Funnel', tag: 'Awareness', accent: '#2f6df6',
-    desc: 'Reach new people — scroll-stopping hooks, trends, and relatable skits that get discovered.' },
-  { id: 'middle', emoji: '🎯', name: 'Middle Funnel', tag: 'Consideration', accent: '#e0a419',
-    desc: 'Build trust — product education, demos, behind-the-scenes, and testimonials.' },
-  { id: 'bottom', emoji: '🛒', name: 'Bottom Funnel', tag: 'Conversion', accent: '#0f9d58',
-    desc: 'Drive action — offers, reviews, urgency, and clear calls-to-action to buy.' },
-];
-
 const emptyData = () => ({ top: [], middle: [], bottom: [] });
 
 function loadData() {
-  try {
-    const d = JSON.parse(localStorage.getItem(KV) || 'null');
-    if (d && Array.isArray(d.top)) return { ...emptyData(), ...d };
-  } catch (e) { /* fall through */ }
-  return emptyData();
-}
-
-function persist(data) {
-  const json = JSON.stringify(data);
-  try { localStorage.setItem(KV, json); } catch (e) { /* ignore */ }
-  if (isCloud && store.setKV) store.setKV(KV, json).catch(() => {});
+  const d = readKV(KV, null);
+  return d && Array.isArray(d.top) ? { ...emptyData(), ...d } : emptyData();
 }
 
 // Pull the numeric video id out of a pasted TikTok URL (…/video/1234567890) or a
@@ -57,13 +40,39 @@ function embedSrc(url) {
 
 const uid = () => 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
-export function Fundamental() {
+export function Fundamental({ contents = [], dataVersion, onPlan }) {
   const [data, setData] = useState(loadData);
+  const [saveErr, setSaveErr] = useState(null); // the unsaved data, when the cloud write failed
+  // Re-read after each app data load: syncKV may have just pulled a newer copy from
+  // the cloud (e.g. when this page is the first one opened).
+  useEffect(() => { setData(loadData()); }, [dataVersion]);
   const [open, setOpen] = useState(null);        // funnel id when drilled in
   const [playing, setPlaying] = useState(null);   // inspo item being played
   const [editing, setEditing] = useState(null);   // { item } | { item: null } for new
 
-  const update = (next) => { setData(next); persist(next); };
+  const update = async (next) => {
+    setData(next);
+    try { await writeKV(KV, next); setSaveErr(null); }
+    catch (e) { setSaveErr(next); }
+  };
+
+  // Posts tagged with each funnel stage, for the counts on the funnel cards.
+  const postsIn = (id) => contents.filter((c) => c.funnel_stage === id);
+
+  const planFrom = (funnelId, it) => onPlan && onPlan({
+    title: it.title || '',
+    funnel_stage: funnelId,
+    status: 'idea',
+    caption: ['Inspo: ' + (it.url || ''), it.note || ''].filter((x) => x.trim() && x !== 'Inspo: ').join('\n'),
+  });
+
+  const errBanner = saveErr
+    ? html`<div class="alert" style=${{ marginBottom: '16px' }}>
+        <div class="alert-dot"><${Icon} name="alert" size=${15} /></div>
+        <div class="alert-text"><b>Not saved to the cloud.</b> Your last change is only on this device — check your connection and try again.</div>
+        <button class="btn btn-sm" onClick=${() => update(saveErr)}>Try again</button>
+      </div>`
+    : '';
 
   const addOrSave = (funnelId, item) => {
     const list = data[funnelId] || [];
@@ -74,7 +83,7 @@ export function Fundamental() {
     setEditing(null);
   };
 
-  const remove = (funnelId, id) => update({ ...data, [funnelId]: (data[funnelId] || []).filter((x) => x.id !== id) });
+  const remove = (funnelId, id) => confirm('Remove this inspo clip?') && update({ ...data, [funnelId]: (data[funnelId] || []).filter((x) => x.id !== id) });
 
   // ---- Landing: the three funnel cards ----
   if (!open) {
@@ -86,18 +95,22 @@ export function Fundamental() {
         </div>
       </div>
       <p class="muted" style=${{ marginTop: '-8px', marginBottom: '18px', fontSize: '13.5px' }}>
-        Your inspiration library, organised by funnel stage. Pick a funnel to collect reference clips and notes.
+        Your inspiration library, organised by funnel stage. Pick a funnel to collect reference clips and notes,
+        then use <strong>Plan a post</strong> to turn a clip into content on your calendar.
       </p>
+      ${errBanner}
       <div class="fund-grid">
         ${FUNNELS.map((f) => {
           const n = (data[f.id] || []).length;
+          const posts = postsIn(f.id);
+          const pub = posts.filter((c) => c.status === 'published').length;
           return html`<button class="funnel-card" style=${{ '--accent': f.accent }} onClick=${() => setOpen(f.id)}>
             <div class="funnel-emoji">${f.emoji}</div>
             <div class="funnel-tag">${f.tag}</div>
             <div class="funnel-name">${f.name}</div>
             <div class="funnel-desc">${f.desc}</div>
             <div class="funnel-foot">
-              <span>${n} ${n === 1 ? 'inspo clip' : 'inspo clips'}</span>
+              <span>${n} ${n === 1 ? 'inspo clip' : 'inspo clips'} · ${posts.length - pub} planned · ${pub} published</span>
               <${Icon} name="chevronRight" size=${18} />
             </div>
           </button>`;
@@ -125,6 +138,7 @@ export function Fundamental() {
       </div>
     </div>
 
+    ${errBanner}
     ${items.length === 0
       ? html`<div class="card card-pad"><${Empty} title="No inspo yet">Paste a TikTok link and a note to start building your ${f.name.toLowerCase()} reference library.</${Empty}></div>`
       : html`<div class="fund-grid">
@@ -142,6 +156,7 @@ export function Fundamental() {
                 ${it.title ? html`<div class="inspo-title">${it.title}</div>` : ''}
                 <div class="inspo-note">${it.note || html`<span class="muted">No note.</span>`}</div>
                 <div class="inspo-actions">
+                  ${onPlan ? html`<button class="btn btn-sm" onClick=${() => planFrom(open, it)} title="Create a post from this clip"><${Icon} name="calendar" size=${13} /> Plan a post</button>` : ''}
                   ${it.url ? html`<a href=${it.url} target="_blank" rel="noopener" class="btn btn-ghost btn-sm"><${Icon} name="external" size=${13} /> Open</a>` : ''}
                   <button class="btn btn-ghost btn-sm" onClick=${() => setEditing({ item: it })}><${Icon} name="pencil" size=${13} /></button>
                   <button class="btn btn-ghost btn-sm" onClick=${() => remove(open, it.id)}><${Icon} name="trash" size=${13} /></button>

@@ -2,6 +2,7 @@ import { html } from '../lib/html.js';
 import { useState } from 'preact/hooks';
 import { Kpi, Progress, Badge, Platform, Icon, Empty } from '../components/ui.js';
 import { dashboard, erOf, compact } from '../lib/metrics.js';
+import { STATUS_LABEL } from '../lib/constants.js';
 import { longDate, shortMonth, shortDate, parse, startOfDay, addDays, startOfMonth, endOfMonth, startOfWeek } from '../lib/date.js';
 
 const RANGES = [
@@ -59,6 +60,8 @@ export function Dashboard({ contents, campaigns, config, onNew, onOpen, onNaviga
   ];
   const selList = sel ? d.lists[sel] || [] : [];
   const selLabel = sel ? (kpis.find((k) => k.kind === sel) || {}).label : '';
+  const [stage, setStage] = useState(null); // pipeline stage being listed
+  const stageItems = stage ? (d.pipeline.find((p) => p.id === stage) || { items: [] }).items : [];
 
   return html`<div>
     <div class="page-head">
@@ -173,11 +176,43 @@ export function Dashboard({ contents, campaigns, config, onNew, onOpen, onNaviga
           <div class="alert-dot"><${Icon} name="alert" size=${15} /></div>
           <div class="alert-text">
             <b>Needs attention:</b> ${d.overdue.length} ${d.overdue.length === 1 ? 'post is' : 'posts are'} past
-            schedule${d.missingCaption.length ? html` and ${d.missingCaption.length} scheduled ${d.missingCaption.length === 1 ? 'post is' : 'posts are'} missing a final caption` : ''}.
+            the planned date and not posted yet${d.missingCaption.length ? html` and ${d.missingCaption.length} scheduled ${d.missingCaption.length === 1 ? 'post is' : 'posts are'} missing a final caption` : ''}.
           </div>
           <button class="btn btn-sm" onClick=${() => onNavigate('calendar')}>Review</button>
         </div>`
       : null}
+
+    <div class="card card-pad section-gap">
+      <div class="card-title" style=${{ marginBottom: '10px' }}>Production pipeline <span class="muted" style=${{ fontWeight: 400 }}>— where every post is right now</span></div>
+      <div class="pipeline">
+        ${d.pipeline.map((p, i) => html`<button class=${'pipe-step' + (stage === p.id ? ' active' : '')} onClick=${() => setStage((s) => (s === p.id ? null : p.id))}>
+          <span class="pipe-n">${p.items.length}</span>
+          <span class="pipe-l">${STATUS_LABEL[p.id]}</span>
+          ${i < d.pipeline.length - 1 ? html`<span class="pipe-arrow">›</span>` : ''}
+        </button>`)}
+      </div>
+      ${stage
+        ? stageItems.length === 0
+          ? html`<div class="muted" style=${{ fontSize: '12.5px', paddingTop: '10px' }}>Nothing at this stage.</div>`
+          : html`<div class="list" style=${{ marginTop: '8px' }}>
+              ${stageItems.map((c) => {
+                const dt = parse(c.scheduled_at);
+                const late = dt && dt < now;
+                return html`<div class="sched-item" style=${{ cursor: 'pointer' }} onClick=${() => onOpen(c)}>
+                  <div class="sched-main">
+                    <div class="sched-title">${c.title}</div>
+                    <div class="sched-meta">
+                      <${Platform} id=${c.platform} />
+                      ${dt ? html` · <span style=${late ? { color: 'var(--red)', fontWeight: 600 } : {}}>${late ? 'was due ' : 'due '}${shortDate(dt)}</span>` : ' · no date yet'}
+                      ${c.assignee ? html` · 👤 ${c.assignee}` : ''}
+                    </div>
+                  </div>
+                  <${Badge} status=${c.status} />
+                </div>`;
+              })}
+            </div>`
+        : ''}
+    </div>
 
     <div class="grid-2 section-gap">
       <div class="card card-pad">
@@ -203,7 +238,7 @@ export function Dashboard({ contents, campaigns, config, onNew, onOpen, onNaviga
                       <${Platform} id=${c.platform} />
                     </div>
                   </div>
-                  <${Badge} status=${c.has_final_caption ? c.status : 'draft'} />
+                  <${Badge} status=${c.status} />
                 </div>`;
               })}
             </div>`}
