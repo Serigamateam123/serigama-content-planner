@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks';
 import { Kpi, Icon, Empty } from '../components/ui.js';
 import { TrendChart } from './TrendChart.js';
 import { TikTokConnect } from './TikTokConnect.js';
-import { analytics, compact, withThousands, erOf, engagementOf, periodMetrics, periodTrend, daysOfHistory, applyFilters, engagementExtras } from '../lib/metrics.js';
+import { analytics, compact, withThousands, erOf, engagementOf, periodMetrics, periodTrend, daysOfHistory, applyFilters, engagementExtras, ceilingFloor } from '../lib/metrics.js';
 
 // Unicode-block sparkline from a list of numbers (shared by monthly + engagement).
 function sparkline(vals) {
@@ -672,15 +672,43 @@ function MonthlyReport({ contents, followers }) {
   const keys = Object.keys(stored.months).sort();
   if (!keys.length) return '';
 
-  const pubList = (ym) => (contents || []).filter((c) => c.status === 'published' && (c.published_at || '').slice(0, 7) === ym);
+  // Month a post was published, in local time (published_at is stored in UTC, so a
+  // post made early on the 1st in Malaysia would otherwise land in the month before).
+  const monthOf = (c) => { const d = parse(c.published_at); return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : ''; };
+  const pubList = (ym) => (contents || []).filter((c) => c.status === 'published' && monthOf(c) === ym);
   const pubViews = (ym) => pubList(ym).reduce((s, c) => s + (Number(c.metrics && c.metrics.views) || 0), 0);
   const vpf = (v) => (followers ? Math.round(v / followers) : 0);
   const ts = stored.trafficSourceOverall || {};
 
   const rows = keys.map((k) => {
     const m = stored.months[k];
-    return { m, short: m.label.slice(0, 3), label: m.complete ? m.label : `${m.label} (1–${m.days})`, studioViews: m.views, pubV: pubViews(k), posts: pubList(k).length };
+    return { m, short: m.label.slice(0, 3), label: m.complete ? m.label : `${m.label} (1–${m.days})`, studioViews: m.views, pubV: pubViews(k), posts: pubList(k).length, cf: ceilingFloor(pubList(k)) };
   });
+  rows.forEach((r, i) => { r.prevCf = i > 0 ? rows[i - 1].cf : null; });
+
+  // All-time ceiling: the best video ever, whichever month it was posted in.
+  const allTime = ceilingFloor((contents || []).filter((c) => c.status === 'published'));
+  const allTimeWhen = allTime ? parse(allTime.ceilingPost.published_at) : null;
+  const clipT = (t, n = 34) => { t = (t || '(untitled)').trim(); return t.length > n ? t.slice(0, n) + '…' : t; };
+  // ▲/▼ vs the month before, as a % change.
+  const delta = (cur, prev) => {
+    if (cur == null || prev == null || !prev) return '';
+    const pct = Math.round(((cur - prev) / prev) * 100);
+    if (pct === 0) return html`<span class="wow wow-flat">± 0%</span>`;
+    return html`<span class=${'wow ' + (pct > 0 ? 'wow-up' : 'wow-down')} title="vs the month before">${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}%</span>`;
+  };
+  // Plain-language read of the latest month with ceiling & floor data.
+  const cfRows = rows.filter((r) => r.cf);
+  const latest = cfRows[cfRows.length - 1];
+  const prevCf = latest ? latest.prevCf : null;
+  let cfVerdict = '';
+  if (latest && prevCf) {
+    const cUp = latest.cf.ceiling >= prevCf.ceiling, fUp = latest.cf.floor >= prevCf.floor;
+    cfVerdict = cUp && fUp ? '✅ Both went up — big ideas and normal videos are getting stronger.'
+      : !cUp && !fUp ? '⚠️ Both dropped — nothing broke out, and normal videos are getting less reach too.'
+      : cUp ? '🎯 The ceiling rose but the floor fell — a hit carried the month; normal videos need work.'
+      : '🪵 The floor rose but the ceiling fell — steadier normal videos, but no big breakout.';
+  }
   const last = rows[rows.length - 1];
   const peak = rows.reduce((a, b) => (b.studioViews > a.studioViews ? b : a));
   const avgViews = rows.reduce((s, r) => s + r.studioViews, 0) / rows.length;
@@ -698,6 +726,8 @@ function MonthlyReport({ contents, followers }) {
           <th title="Views that happened during the month — matches TikTok Studio">📺 Views in the month<br/><span style=${{ fontWeight: 400, color: 'var(--muted)' }}>(Studio)</span></th>
           <th title="All-time views of the videos published that month">🎬 From that month's posts<br/><span style=${{ fontWeight: 400, color: 'var(--muted)' }}>(all-time)</span></th>
           <th>Posts</th>
+          <th title="The best video posted that month — how big one video can pop">🏔️ Ceiling<br/><span style=${{ fontWeight: 400, color: 'var(--muted)' }}>(best video)</span></th>
+          <th title="The middle (median) video posted that month — what a normal video gets">🪵 Floor<br/><span style=${{ fontWeight: 400, color: 'var(--muted)' }}>(normal video)</span></th>
         </tr></thead>
         <tbody>
           ${rows.map((r) => html`<tr style=${r === peak ? { background: '#fff7e6' } : {}}>
@@ -705,6 +735,11 @@ function MonthlyReport({ contents, followers }) {
             <td>${compact(r.studioViews)}</td>
             <td>${compact(r.pubV)}</td>
             <td>${r.posts}</td>
+            <td>${r.cf
+              ? html`<strong>${compact(r.cf.ceiling)}</strong>${delta(r.cf.ceiling, r.prevCf && r.prevCf.ceiling)}
+                  <span class="muted" style=${{ display: 'block', fontSize: '11px', lineHeight: 1.3, maxWidth: '150px', marginLeft: 'auto', whiteSpace: 'normal' }} title=${r.cf.ceilingPost.title || ''}>${clipT(r.cf.ceilingPost.title)}</span>`
+              : html`<span class="muted">—</span>`}</td>
+            <td>${r.cf ? html`<strong>${compact(r.cf.floor)}</strong>${delta(r.cf.floor, r.prevCf && r.prevCf.floor)}` : html`<span class="muted">—</span>`}</td>
           </tr>`)}
         </tbody>
       </table>
@@ -722,7 +757,16 @@ function MonthlyReport({ contents, followers }) {
     <div class="eng-notes">
       <div class="note">📺 <strong>Views in the month</strong> — TikTok Studio's figure: views during the month across <em>all</em> your videos. <em>"How much reach did we get?"</em></div>
       <div class="note">🎬 <strong>From that month's posts</strong> — all-time views of the videos you <em>published</em> that month. <em>"How good was that month's content?"</em></div>
+      <div class="note">🏔️ <strong>Ceiling</strong> — the views of the <em>best</em> video posted that month. <em>"How big can one video pop?"</em></div>
+      <div class="note">🪵 <strong>Floor</strong> — the views of the <em>middle</em> video posted that month (half did better, half did worse). <em>"What does a normal video get?"</em> Each video counts in the month it was <em>posted</em>, even if its views came later.</div>
     </div>
+    ${latest ? html`<div class="eng-notes" style=${{ borderLeft: '3px solid var(--blue-1)' }}>
+      <div class="eng-notes-title">🏔️ Ceiling & floor</div>
+      <div class="note"><strong>${latest.label}:</strong> ceiling <strong>${compact(latest.cf.ceiling)}</strong> (“${clipT(latest.cf.ceilingPost.title, 44)}”)${prevCf ? html`, vs ${compact(prevCf.ceiling)} the month before` : ''} · floor <strong>${compact(latest.cf.floor)}</strong>${prevCf ? html`, vs ${compact(prevCf.floor)}` : ''}.</div>
+      ${cfVerdict ? html`<div class="note">${cfVerdict}</div>` : ''}
+      ${allTime ? html`<div class="note">🚀 <strong>All-time ceiling: ${compact(allTime.ceiling)}</strong> — “${clipT(allTime.ceilingPost.title, 44)}”${allTimeWhen ? ` (${allTimeWhen.toLocaleString('en-US', { month: 'short', year: 'numeric' })})` : ''}. Proof the account can reach this — the monthly ceiling shows how close each month got.</div>` : ''}
+      <div class="note">📏 Score a month by <strong>“did we land one big video?”</strong> (the ceiling), not just how many we posted — while keeping the floor from sliding.</div>
+    </div>` : ''}
     <div class="eng-notes" style=${{ borderLeft: '3px solid var(--gold-strong)' }}>
       <div class="note">🚀 <strong>${peak.short} was your biggest month by far</strong> — ${compact(peak.studioViews)} views, <strong>${(peak.studioViews / avgViews).toFixed(1)}× your monthly average</strong>${last.m.complete ? '' : `; ${last.short} is at ${compact(last.studioViews)} so far`}.</div>
       <div class="note">🎯 <strong>Reach efficiency:</strong> ${peak.short} reached <strong>${vpf(peak.studioViews)}×</strong> your follower count — nearly all your reach is the algorithm, not your following.</div>

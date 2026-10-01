@@ -600,6 +600,21 @@ function fillGaps(entries, grain) {
   return out;
 }
 
+// Ceiling & floor for a set of posts (usually the ones published in one month):
+// ceiling = the best post's views ("how big can one video pop?"), floor = the
+// median post's views ("what does a normal video get?"). The median is used
+// rather than the lowest post so one fluke (or a post that's a day old) can't
+// drag it down. Only posts with numbers count. Null when there are none.
+export function ceilingFloor(posts) {
+  const withViews = (posts || []).filter((c) => c.metrics).map((c) => ({ c, v: Number(c.metrics.views) || 0 }));
+  if (!withViews.length) return null;
+  withViews.sort((a, b) => b.v - a.v);
+  const vs = withViews.map((x) => x.v);
+  const mid = Math.floor(vs.length / 2);
+  const floor = vs.length % 2 ? vs[mid] : Math.round((vs[mid - 1] + vs[mid]) / 2);
+  return { ceiling: vs[0], ceilingPost: withViews[0].c, floor, count: vs.length };
+}
+
 // Compact number formatting: 1912700 -> "1.9M", 171160 -> "171.2K".
 export function compact(n) {
   n = Number(n) || 0;
