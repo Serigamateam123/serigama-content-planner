@@ -113,18 +113,37 @@ export function AnalyticsDashboard({ contents, accountStats, onNavigate, onRefre
   const follInRange = (() => {
     if (rangeKey === '7') return aud ? aud.net7d : null;
     if (rangeKey === '28') return aud ? aud.net28d : null;
-    if (!mfoll) return null;
-    const fromD = r.from ? parse(r.from) : new Date(2000, 0, 1);
-    const toD = r.to ? parse(r.to) : now;
-    const fromMonth = new Date(fromD.getFullYear(), fromD.getMonth(), 1);
-    const toMonth = new Date(toD.getFullYear(), toD.getMonth(), 1);
-    let sum = 0, any = false;
-    for (const [k, v] of Object.entries(mfoll)) {
-      const [y, m] = k.split('-');
-      const md = new Date(Number(y), Number(m) - 1, 1);
-      if (md >= fromMonth && md <= toMonth) { sum += Number(v); any = true; }
+    // Whole calendar month(s) — This month, All time, or a month-aligned span —
+    // use the official Studio monthly net-follower figures. A partial range (a
+    // custom span inside a month, e.g. the 9th–16th) can't: the whole-month figure
+    // would overstate it, so use the real day-to-day change from the follower
+    // snapshots instead, so the number matches the dates actually selected.
+    const wholeMonths = (() => {
+      if (!r.from) return true; // open start / all-time → treat as whole months
+      const f = parse(r.from);
+      if (!f || f.getDate() !== 1) return false;
+      const t = r.to ? parse(r.to) : now;
+      if (!t) return false;
+      const endsMonth = t.getDate() === new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+      const endsToday = t.getFullYear() === now.getFullYear() && t.getMonth() === now.getMonth() && t.getDate() >= now.getDate();
+      return endsMonth || endsToday;
+    })();
+    if (wholeMonths && mfoll) {
+      const fromD = r.from ? parse(r.from) : new Date(2000, 0, 1);
+      const toD = r.to ? parse(r.to) : now;
+      const fromMonth = new Date(fromD.getFullYear(), fromD.getMonth(), 1);
+      const toMonth = new Date(toD.getFullYear(), toD.getMonth(), 1);
+      let sum = 0, any = false;
+      for (const [k, v] of Object.entries(mfoll)) {
+        const [y, m] = k.split('-');
+        const md = new Date(Number(y), Number(m) - 1, 1);
+        if (md >= fromMonth && md <= toMonth) { sum += Number(v); any = true; }
+      }
+      if (any) return sum;
     }
-    return any ? sum : null;
+    // Partial range (or no monthly figure): real net change from the daily
+    // follower snapshots, so the figure matches the exact dates selected.
+    return a.followerGrowth ? a.followerGrowth.gained : null;
   })();
 
   let bestFollMonth = null;

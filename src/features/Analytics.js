@@ -978,16 +978,10 @@ function KpiDetail({ kind, a, rangeMode, history, onClose }) {
           </div>`;
         })()
       : ''}
-    ${showStudio && studioSummaryNotes.length
-      ? html`<div class="eng-notes" style=${{ marginTop: '12px', borderLeft: '3px solid var(--gold-strong)' }}>
-          <div class="eng-notes-title">📈 What your numbers are saying <span class="muted" style=${{ fontWeight: 400 }}>(from ${rows.filter((c) => c.studio).length} captured)</span></div>
-          ${studioSummaryNotes.map((nt) => html`<div class="note" dangerouslySetInnerHTML=${{ __html: nt }}></div>`)}
-        </div>`
-      : ''}
     ${showStudio
       ? html`<div class="eng-notes" style=${{ marginTop: '12px' }}>
           <div class="eng-notes-title">📊 Hook / New viewers / New followers — what they mean</div>
-          <div class="note">🪝 <strong>Hook 3s</strong> — % still watching at 3 seconds. <strong style=${{ color: '#0f7a4d' }}>60%+ strong</strong>, 40–59% okay, <strong style=${{ color: '#b4232a' }}>under 40% weak</strong>.</div>
+          <div class="note">🪝 <strong>Hook 3s</strong> — % still watching at 3 seconds. <strong style=${{ color: '#0f7a4d' }}>🎯 Our goal: 63%</strong> (our breakout average). 60%+ strong, 40–59% okay, under 40% weak.</div>
           <div class="note">🆕 <strong>New viewers</strong> — first-time viewers. Higher = <strong>reaching new people</strong>; 20%+ healthy, low % = mostly loyal fans.</div>
           <div class="note">➕ <strong>New followers</strong> — followed because of this video. ~<strong style=${{ color: '#0f7a4d' }}>0.1%+ of viewers</strong> is a good conversion.</div>
           <div class="note" style=${{ color: 'var(--muted)' }}>Colour: <strong style=${{ color: '#0f7a4d' }}>▲ good</strong> · <strong style=${{ color: '#b7791f' }}>● okay</strong> · <strong style=${{ color: '#b4232a' }}>▼ needs work</strong>. Hover a number for the full note. Only videos you've captured from Studio show these.</div>
@@ -1015,12 +1009,6 @@ function StudioCard({ published }) {
   return html`<div class="card card-pad section-gap">
     <div class="card-title">📊 TikTok Studio insights <span class="muted" style=${{ fontWeight: 400 }}>(${captured.length} captured ${captured.length === 1 ? 'video' : 'videos'})</span></div>
     <p class="muted" style=${{ fontSize: '12.5px', marginTop: 0 }}>Deep metrics only TikTok Studio exposes — hook, watch time and audience. Manually captured, so only videos you've grabbed show here.</p>
-    ${summary.length
-      ? html`<div class="eng-notes" style=${{ borderLeft: '3px solid var(--gold-strong)' }}>
-          <div class="eng-notes-title">📈 What your numbers are saying</div>
-          ${summary.map((nt) => html`<div class="note" dangerouslySetInnerHTML=${{ __html: nt }}></div>`)}
-        </div>`
-      : ''}
     <div style=${{ overflowX: 'auto' }}>
       <table class="atable">
         <thead><tr><th>Video</th><th>Hook 3s</th><th>Avg watch</th><th>Watched full</th><th>New viewers</th><th>New followers</th></tr></thead>
@@ -1042,7 +1030,7 @@ function StudioCard({ published }) {
     </div>
     <div class="eng-notes" style=${{ marginTop: '12px' }}>
       <div class="eng-notes-title">What these mean</div>
-      <div class="note">🪝 <strong>Hook 3s</strong> — % still watching at 3 seconds. <strong style=${{ color: '#0f7a4d' }}>60%+ strong</strong>, 40–59% okay, <strong style=${{ color: '#b4232a' }}>under 40% weak</strong>.</div>
+      <div class="note">🪝 <strong>Hook 3s</strong> — % still watching at 3 seconds. <strong style=${{ color: '#0f7a4d' }}>🎯 Our goal: 63%</strong> (our breakout average). 60%+ strong, 40–59% okay, under 40% weak.</div>
       <div class="note">🆕 <strong>New viewers</strong> — first-time viewers. Higher = <strong>reaching new people (growth)</strong>; 20%+ healthy, low % = mostly loyal fans.</div>
       <div class="note">➕ <strong>New followers</strong> — followed because of this video. ~<strong style=${{ color: '#0f7a4d' }}>0.1%+ of viewers</strong> is a good conversion.</div>
       <div class="note" style=${{ color: 'var(--muted)' }}>Colour key: <strong style=${{ color: '#0f7a4d' }}>▲ good</strong> · <strong style=${{ color: '#b7791f' }}>● okay</strong> · <strong style=${{ color: '#b4232a' }}>▼ needs work</strong>. Hover a number for its full note.</div>
