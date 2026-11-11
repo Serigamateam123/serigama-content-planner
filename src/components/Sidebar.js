@@ -1,5 +1,10 @@
 import { html } from '../lib/html.js';
 import { Icon } from './ui.js';
+import { socialAccounts, PLATFORM_NAME, accountColor } from '../lib/account.js';
+import { startTikTokConnect, startInstagramConnect } from '../features/TikTokConnect.js';
+
+const ADD = '__add_tiktok__';
+const ADD_IG = '__add_instagram__';
 
 const NAV = [
   { section: 'Plan' },
@@ -12,14 +17,55 @@ const NAV = [
   { id: 'targets', label: 'Targets', icon: 'target' },
 ];
 
-export function Sidebar({ route, onNavigate, onNew, config, session, isCloud, onSetPassword, onSignOut }) {
+export function Sidebar({ route, onNavigate, onNew, config, accounts, accountId, onSwitchAccount, calScope, onCalendarScope, session, isCloud, onSetPassword, onSignOut }) {
   const owner = config.ownerName || 'Serigama';
   const initial = owner.trim().charAt(0).toUpperCase() || 'S';
+  const social = socialAccounts(accounts);
+  const hasTikTok = social.some((a) => a.platform === 'tiktok');
+  const current = social.find((a) => a.id === accountId);
+  // "+ Add … account" starts that platform's sign-in (so another account can be
+  // picked); the select snaps back to the current account meanwhile.
+  const pickAccount = async (e) => {
+    const v = e.target.value;
+    if (v !== ADD && v !== ADD_IG) { onSwitchAccount(v); return; }
+    e.target.value = accountId || '';
+    const err = v === ADD ? await startTikTokConnect(hasTikTok) : await startInstagramConnect();
+    if (err) alert(err);
+  };
+  // Content Calendar sub-items: every account together, or one account's calendar.
+  const onCal = route === 'calendar';
+  const calSubs = social.length > 1 && onCalendarScope
+    ? html`<div class="nav-subs">
+        <button class=${'nav-item nav-sub' + (onCal && calScope === 'all' ? ' active' : '')}
+          onClick=${() => onCalendarScope('all')} title="Every account's content on one calendar">
+          <span class="acct-dots">${social.slice(0, 3).map((a) => html`<i style=${{ background: accountColor(a.id, accounts) }}></i>`)}</span>
+          <span>All accounts</span>
+        </button>
+        ${social.map((a) => html`<button class=${'nav-item nav-sub' + (onCal && calScope !== 'all' && a.id === accountId ? ' active' : '')}
+            onClick=${() => onCalendarScope(a.id)} title=${`@${a.handle || a.display_name} · ${PLATFORM_NAME[a.platform]}`}>
+            <span class="acct-dots"><i style=${{ background: accountColor(a.id, accounts) }}></i></span>
+            <span>${a.handle || a.display_name}</span>
+          </button>`)}
+      </div>`
+    : null;
   return html`<aside class="sidebar">
     <div class="brand">
       <div class="brand-name">${config.brandName || 'Serigama'}</div>
       <div class="brand-sub">Content Planner & Reporting</div>
     </div>
+
+    ${social.length || isCloud
+      ? html`<label class="acct-switch">
+          <span class="nav-label">Account</span>
+          <select value=${accountId || ''} onChange=${pickAccount}
+            title=${current ? `${PLATFORM_NAME[current.platform]} account: @${current.handle || current.display_name}` : 'No account connected'}>
+            ${social.length ? '' : html`<option value="">No account connected</option>`}
+            ${social.map((a) => html`<option value=${a.id}>@${a.handle || a.display_name} · ${PLATFORM_NAME[a.platform]}</option>`)}
+            ${isCloud ? html`<option value=${ADD}>+ Add TikTok account…</option>` : ''}
+            ${isCloud ? html`<option value=${ADD_IG}>+ Add Instagram account…</option>` : ''}
+          </select>
+        </label>`
+      : null}
 
     <button class="btn-new" onClick=${onNew}>
       <${Icon} name="plus" size=${16} /><span>New content</span>
@@ -30,11 +76,12 @@ export function Sidebar({ route, onNavigate, onNew, config, session, isCloud, on
         (n) => n.section
           ? html`<div class="nav-label">${n.section}</div>`
           : html`<button
-          class=${'nav-item' + (route === n.id ? ' active' : '')}
+          class=${'nav-item' + (route === n.id && !(n.id === 'calendar' && calSubs) ? ' active' : '') + (route === n.id ? ' current' : '')}
           onClick=${() => onNavigate(n.id)}
         >
           <${Icon} name=${n.icon} size=${17} /><span>${n.label}</span>
-        </button>`
+        </button>
+        ${n.id === 'calendar' && calSubs ? calSubs : ''}`
       )}
     </nav>
 

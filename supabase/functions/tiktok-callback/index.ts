@@ -49,22 +49,44 @@ Deno.serve(async (req) => {
       displayName = u?.data?.user?.display_name ?? null;
     } catch (_) { /* non-fatal */ }
 
-    // 3) Store the connection (service role bypasses RLS).
+    // 3) Store the connection (service role bypasses RLS). A login can connect
+    //    several TikTok accounts: one integration per open_id, each tied to its
+    //    own `accounts` row (reused on reconnect, created the first time).
     const sb = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    await sb.from("integrations").upsert({
+    const { data: existing } = await sb
+      .from("integrations")
+      .select("account_id")
+      .eq("user_id", state)
+      .eq("platform", "tiktok")
+      .eq("open_id", tok.open_id)
+      .maybeSingle();
+    let accountId = existing?.account_id ?? null;
+    if (!accountId) {
+      const { data: acct, error: accErr } = await sb.from("accounts").insert({
+        user_id: state,
+        platform: "tiktok",
+        handle: displayName,
+        display_name: displayName ? `${displayName} (TikTok)` : "TikTok account",
+      }).select("id").single();
+      if (accErr) throw accErr;
+      accountId = acct.id;
+    }
+    const { error: intErr } = await sb.from("integrations").upsert({
       user_id: state,
       platform: "tiktok",
       open_id: tok.open_id,
+      account_id: accountId,
       display_name: displayName,
       access_token: tok.access_token,
       refresh_token: tok.refresh_token,
       expires_at: new Date(Date.now() + (tok.expires_in ?? 86400) * 1000).toISOString(),
       scope: tok.scope,
       updated_at: new Date().toISOString(),
-    }, { onConflict: "user_id,platform" });
+    }, { onConflict: "user_id,platform,open_id" });
+    if (intErr) throw intErr;
 
     // 4) Send the user back to the app.
     return Response.redirect(`${appUrl}#/analytics?tiktok=connected`, 302);

@@ -6,6 +6,7 @@ import { analytics, compact, withThousands, erOf, breakdownBy } from '../lib/met
 import { GoalsCard } from './Goals.js';
 import { audienceFacts } from '../lib/audience.js';
 import { readKV, updateKVEntry } from '../lib/kv.js';
+import { studioName } from '../lib/account.js';
 import { startOfDay, startOfMonth, addDays, dayKey, parse, shortDate } from '../lib/date.js';
 
 const REPORTS_KEY = 'serigama.reports'; // app_kv map: report id -> saved snapshot
@@ -89,10 +90,10 @@ export function AnalyticsDashboard({ contents, accountStats, onNavigate, onRefre
     const arrow = d > 0 ? '▲' : d < 0 ? '▼' : '±';
     return html`<span style=${{ color, fontWeight: 600, fontSize: '11.5px' }}>${arrow} ${isCount ? Math.abs(d) : Math.abs(d) + '%'} <span class="muted" style=${{ fontWeight: 400 }}>vs prev</span></span>`;
   };
-  let aud = null, mfoll = null, ts = null;
-  try { aud = JSON.parse(localStorage.getItem('serigama.audience') || 'null'); } catch (e) { aud = null; }
-  try { mfoll = JSON.parse(localStorage.getItem('serigama.monthlyfollowers') || 'null'); } catch (e) { mfoll = null; }
-  try { const mm = JSON.parse(localStorage.getItem('serigama.monthly') || 'null'); ts = mm && mm.trafficSourceOverall ? mm.trafficSourceOverall : null; } catch (e) { ts = null; }
+  const aud = readKV('serigama.audience', null);
+  const mfoll = readKV('serigama.monthlyfollowers', null);
+  const mm = readKV('serigama.monthly', null);
+  const ts = mm && mm.trafficSourceOverall ? mm.trafficSourceOverall : null;
 
   const follDeltaPct = aud ? (rangeKey === '7' ? aud.net7dChangePct : rangeKey === '28' ? aud.net28dChangePct : null) : null;
   const followers = (aud && aud.totalFollowers) || (a.followerGrowth && a.followerGrowth.current) || 0;
@@ -278,7 +279,7 @@ export function AnalyticsDashboard({ contents, accountStats, onNavigate, onRefre
       : html`
         <div class="section-gap" style=${{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
           ${stat('📺', 'Views in the month', vim && vim.sum != null ? compact(vim.sum) : '—',
-            !vim ? 'pick a whole month to see this' : vim.missing ? `${vim.missing} not captured from TikTok Studio yet` : vim.partial ? `TikTok Studio · ${vim.partial} only` : 'TikTok Studio — same number as Targets')}
+            !vim ? 'pick a whole month to see this' : vim.missing ? `${vim.missing} not captured from ${studioName()} yet` : vim.partial ? `${studioName()} · ${vim.partial} only` : `${studioName()} — same number as Targets`)}
           ${stat('👁', 'Views of posts published', compact(a.totalViews), rangeKey === 'all' ? 'all-time, all videos' : 'all-time views of the posts published in this range', deltaChip(a.totalViews, cmp && cmp.views))}
           ${stat('💬', 'Engagement', compact(a.totalEngagement), `${a.avgER}% avg. rate${erWord ? ' — ' + erWord : ''}`, deltaChip(a.totalEngagement, cmp && cmp.eng))}
           ${stat('👥', 'Followers', withThousands(followers), follInRange != null ? `+${withThousands(follInRange)} gained (${rl})` : 'current total', follDeltaPct != null ? html`<span style=${{ color: follDeltaPct >= 0 ? '#0f7a4d' : '#b4232a', fontWeight: 600, fontSize: '11.5px' }}>${follDeltaPct >= 0 ? '▲' : '▼'} ${Math.abs(follDeltaPct)}% <span class="muted" style=${{ fontWeight: 400 }}>vs prev</span></span>` : '')}
@@ -426,7 +427,7 @@ function ReportView({ rep, onBack, onDelete }) {
     </div>
 
     <div class="kpi-row">
-      ${st.viewsInMonth != null ? tile('Views in the month', compact(st.viewsInMonth), 'TikTok Studio') : ''}
+      ${st.viewsInMonth != null ? tile('Views in the month', compact(st.viewsInMonth), studioName()) : ''}
       ${tile('Views of posts published', compact(st.views), rep.comparePct != null ? `${rep.comparePct >= 0 ? '▲' : '▼'} ${Math.abs(rep.comparePct)}% vs period before` : '')}
       ${tile('Engagement', compact(st.engagement), `${st.er}% avg. rate`)}
       ${tile('Followers', withThousands(st.followers), st.follInRange != null ? `+${withThousands(st.follInRange)} gained` : '')}

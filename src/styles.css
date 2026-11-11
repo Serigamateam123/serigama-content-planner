@@ -77,6 +77,16 @@ button { font-family: inherit; }
 }
 .btn-new:hover { background: rgba(255, 255, 255, .24); }
 
+/* Account switcher (sidebar; last option adds another TikTok account) */
+.acct-switch { display: block; margin-bottom: 14px; }
+.acct-switch .nav-label { display: block; padding: 0 2px 6px; }
+.acct-switch select {
+  width: 100%; border: 1px solid rgba(255, 255, 255, .28); border-radius: 10px;
+  background: rgba(255, 255, 255, .12); color: #fff; font: inherit; font-size: 13.5px; font-weight: 600;
+  padding: 9px 10px; cursor: pointer;
+}
+.acct-switch select option { color: #1f2937; }
+
 .nav { margin-top: 22px; display: flex; flex-direction: column; gap: 3px; flex: 1; }
 .nav-item {
   display: flex; align-items: center; gap: 11px;
@@ -91,6 +101,15 @@ button { font-family: inherit; }
 .nav-item:hover { background: rgba(255, 255, 255, .1); color: #fff; }
 .nav-item.active { background: rgba(255, 255, 255, .18); color: #fff; font-weight: 600; }
 .nav-item svg { opacity: .9; }
+/* Content Calendar sub-items (All accounts + one per account). */
+.nav-item.current:not(.active) { color: #fff; font-weight: 600; }
+.nav-subs { display: flex; flex-direction: column; gap: 1px; margin: 1px 0 4px; }
+.nav-item.nav-sub { padding: 6px 12px 6px 22px; font-size: 13px; gap: 9px; }
+.nav-item.nav-sub span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-dots { display: inline-flex; width: 17px; justify-content: center; flex: 0 0 auto; }
+.acct-dots i { width: 8px; height: 8px; border-radius: 50%; margin: 0 -1.5px; box-shadow: 0 0 0 1.5px rgba(255,255,255,.55); }
+.cal-acct { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.cal-acct i { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
 .nav-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; opacity: .5; padding: 12px 12px 4px; }
 .nav-label:first-child { padding-top: 0; }
 
@@ -363,6 +382,15 @@ button { font-family: inherit; }
   .brand-name, .brand-sub, .nav-item span, .user-name, .user-role, .btn-new span { display: none; }
   .btn-new { padding: 11px 0; }
   .nav-item { justify-content: center; }
+  .nav-subs { display: none; }
+  /* Icon-strip sidebar: the account switcher becomes an "@" button (same dropdown). */
+  .acct-switch { position: relative; }
+  .acct-switch .nav-label { display: none; }
+  .acct-switch select { color: transparent; padding: 9px 0; height: 40px; }
+  .acct-switch::after {
+    content: '@'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px; pointer-events: none;
+  }
   .grid-2 { grid-template-columns: 1fr; }
   .kpi-row, .kpi-5 { grid-template-columns: repeat(2, 1fr); }
   .filters { grid-template-columns: 1fr 1fr; }

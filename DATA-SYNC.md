@@ -50,11 +50,18 @@ For the latest **auto** numbers too, click the gold **Refresh** button after log
 3. **Monthly views** — Overview tab with a custom date range set to the month → "Video views".
 4. **Monthly followers** — Followers tab, custom range = the month → "Net followers".
 5. **Growth pace** — Followers tab, Last 7 days and Last 28 days → net + change %.
+   A new account shows the change as "--": store `null`. If it is under 28 days old, also store
+   `net28dDays` (the days the 28-day net actually covers) so the follower-pace forecast is right.
 6. **Audience** — Followers tab → gender, age, locations.
 7. **Traffic source** — Overview tab → For You / Profile / Search / Following.
    ⚠️ This is **one account-level figure** — TikTok does **not** split it by date range.
 
 Every value is written to the cloud via `window.serigamaCloud.set(...)` (see §5).
+
+**More than one TikTok account:** do steps 1–7 once per account (switch accounts in TikTok
+Studio first). Per-video figures go in the shared keys as usual. The account-level figures
+(steps 3–7) go in that account's keys: get the account ids with `window.serigamaCloud.accounts()`
+and the key with `window.serigamaCloud.key('serigama.monthly', <account id>)`.
 
 ---
 
@@ -70,13 +77,29 @@ Every value is written to the cloud via `window.serigamaCloud.set(...)` (see §5
     keyed by content id), `serigama.goals` (monthly goals for posts / followers / engagement), `serigama.reports` (saved report snapshots),
     `serigama.targets` (the Targets page's views-in-the-month target: start month, start value,
     monthly growth % and any months set by hand).
-- `syncKV()` — **cloud-authoritative**: for each key, the cloud value is mirrored down to
-  localStorage; a key the cloud does not have yet is seeded **once** from this browser.
-  Runs before the analytics views read localStorage.
+- **Per-account keys** (`src/lib/account.js`): `serigama.monthly`, `serigama.audience`,
+  `serigama.monthlyfollowers`, `serigama.goals`, `serigama.reports`, `serigama.targets` (and the
+  retired `serigama.goal.views`) belong to one TikTok account. The **primary** account (the
+  login's first TikTok account, serigama.daily) uses the plain key names; every other account
+  uses `<key>@<account id>`. The rest (`saves`, `newfollowers`, `contentmeta`, `fundamental`)
+  are keyed by video / content id and shared by all accounts. The sidebar switcher picks the
+  account every screen shows; `readKV` / `writeKV` resolve the key for it.
+- `syncKV()` — **cloud-authoritative**: for each key (every account's copy), the cloud value is
+  mirrored down to localStorage; a primary key the cloud does not have yet is seeded **once**
+  from this browser. Runs before the analytics views read localStorage.
 - `window.serigamaCloud.set(k, v)` — writes **localStorage AND cloud** (`app_kv`).
   **All captures MUST use this**, never bare `localStorage.setItem` (which only touches one browser).
 
+- `window.serigamaCloud.accounts()` / `.key(base, accountId)` — list the TikTok accounts and
+  name a per-account key, for captures of a non-primary account.
+
 **`src/lib/supabase-store.js`** — `getKV()` / `setKV()` read/write `app_kv` (RLS scoped to the user).
+
+**Auto data, several accounts** (`supabase/multi_account.sql`) — each TikTok connection
+(`integrations`, one per `open_id`) points at its `accounts` row; `tiktok-sync` tags every
+synced video (`contents.account_id`) and daily follower snapshot (`account_stats`, one per
+account per day) with it. Connect another account from Post Performance → *Connect another
+TikTok account*.
 
 **`src/lib/kv.js`** — `writeKV()` / `updateKVEntry()` are how the app's own screens save these keys.
 They **throw** if the cloud write fails, and every screen shows that as an error — a change is never
@@ -90,6 +113,77 @@ key is no longer read.
 
 > Rule of thumb: **a manual figure is only "saved" once it is in `app_kv`.** localStorage alone is a
 > per-browser cache, nothing more.
+
+---
+
+## 5b. Instagram (fully automatic — no Thursday capture)
+
+- Connected through **Facebook Login for Business** (Meta app "Serigama Content Planner",
+  ID 1784689132823597, login configuration 1422746343402021 — read-only permissions:
+  instagram_basic, instagram_manage_insights, pages_show_list, pages_read_engagement,
+  business_management). Connect from the sidebar → *+ Add Instagram account…*; pick the
+  **Serigama HQ** Page and the **Mejustif Sdn. Bhd.** business.
+- `supabase/functions/instagram-callback` stores one connection per Instagram account (Page token,
+  doesn't expire). Needs the Supabase secret `META_APP_SECRET` (saved as `Meta_App_Secret`; the
+  function reads either). JWT verification is **off** (Facebook calls it).
+- `supabase/functions/instagram-sync` runs daily at **22:05 UTC (6:05 AM MYT)** (cron job
+  `instagram-daily-sync`, copied from the TikTok job) and from the Refresh button. JWT off. It writes
+  posts + metrics, saves (`serigama.saves`), followers (`account_stats`), and the account's
+  `serigama.monthly@<id>`, `serigama.monthlyfollowers@<id>` and `serigama.audience@<id>` —
+  including **real follows / unfollows** (Instagram reports both; TikTok doesn't).
+- **Feed vs Reels** (Post Performance, Instagram account only): per reel it saves average and total
+  watch time + reach to `serigama.reels` (shared, keyed by post id). Each month in
+  `serigama.monthly@<id>` also gets `viewsByFollowType` (FOLLOWER / NON_FOLLOWER) and
+  `viewsByFormat` (REEL / POST / CAROUSEL_CONTAINER / STORY / AD).
+- API limits (tested 2026-11-06, v25.0): Instagram does **not** give followers gained, profile
+  visits, followers-vs-non-followers or view sources (Explore / Reels tab / profile) **per reel** —
+  only account-wide, so the Reels section labels those panels "whole account".
+- **Thursday web capture (per-reel follows)**: instagram.com (Chrome is signed in as @serigamahq)
+  shows each reel's **Follows** and followers / non-followers split, which the API doesn't. Page:
+  `https://www.instagram.com/insights/media/<pk>/`, where `<pk>` = the reel's shortcode (from
+  `post_url`) decoded as base-64 digits over `A–Z a–z 0–9 - _` (BigInt). Read the page text
+  (Views → Followers %, Profile → Follows). Save `serigama.newfollowers[<graph id>] = follows`
+  and `serigama.reelsweb[<graph id>] = { follows, followerViewsPct, nonFollowerViewsPct,
+  accountsEngaged, capturedAt, source: 'instagram-web' }` (merge, never replace). Weekly: the
+  last ~10 weeks' reels are enough (older ones barely change). First capture 2026-11-06: all 45
+  reels of 2026. Demographics per reel exist only in the phone app.
+- **Who saw your content**: `reached_audience_demographics` (gender / age / country / city) for
+  `this_week` and `this_month`, saved as `viewers` in `serigama.audience@<id>`. There is no per-post
+  demographics API; when one post makes ≥50% of the month's views the panel says the figures are
+  mostly that post's audience.
+- The Meta app's **App domains** must include `acfscrvvlzjtbsxturkx.supabase.co` and Facebook
+  Login for Business → **Valid OAuth Redirect URIs** must include the instagram-callback URL.
+
+---
+
+## 5c. Planned item → posted video (automatic)
+
+Each time the planner loads (cloud mode), `src/lib/reconcile.js` looks for a planned item
+(Idea … Scheduled, no `external_id`) and a synced posted video **of the same account on the
+same day** (Malaysia time). One plan + one unlinked video that day = a pair; with several, they
+pair by title similarity. A day apart only counts when the titles clearly agree. The plan's
+pillar / funnel / hook / product / assignee / CTA / Notion id move to the video's
+`serigama.contentmeta` entry (plus `plan_title`), its notes go into the video's notes if empty,
+and the plan is deleted. Videos that already carry a plan (`plan_title` / `notion_id` / hook /
+pillar) are never merged into again. A video posted on a different day than planned is not
+matched — move or delete that plan by hand.
+
+Display order of accounts (switcher, sidebar, All accounts calendar): HQ on top, daily in the
+centre, intern at the bottom (by handle ending: hq → daily → intern; Instagram before TikTok
+within a brand) — serigamahq, serigama.hq, serigama.daily, serigama.intern. The **primary** account is
+still the oldest TikTok account (serigama.daily), whatever the display order.
+
+---
+
+## 5d. Load speed (2026-11-11)
+
+`contents` (~1,400 rows) and `content_metrics` (~17,000 rows, +~800/day with four accounts) are
+both past PostgREST's 1000-rows-per-response cap. `src/lib/supabase-store.js` counts each table,
+then fetches its pages in parallel (`fetchAllRows`), and downloads `content_metrics` **once** per
+load for both the latest-per-post numbers and the history. Opening took ~10 s (and silently
+dropped ~370 content items over the cap); now ~3 s with everything loaded. If it slows again as
+`content_metrics` grows, add a database view for the latest snapshot per post and load history
+only for recent months.
 
 ---
 

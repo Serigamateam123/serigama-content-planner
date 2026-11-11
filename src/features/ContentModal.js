@@ -3,6 +3,15 @@ import { useState } from 'preact/hooks';
 import { Modal } from '../components/ui.js';
 import { PLATFORMS, STATUSES, FORMATS, FUNNELS, PILLAR_SUGGESTIONS } from '../lib/constants.js';
 import { toDatetimeLocal, fromDatetimeLocal } from '../lib/date.js';
+import { activeAccountId } from '../lib/account.js';
+
+// An inspo link as a clickable URL (adds https:// to "vt.tiktok.com/…"), or null.
+const inspoHref = (v) => {
+  const s = String(v || '').trim();
+  if (!s || /\s/.test(s)) return null;
+  const u = /^https?:\/\//i.test(s) ? s : (/^[\w-]+(\.[\w-]+)+\//.test(s) ? 'https://' + s : null);
+  try { return u && new URL(u).href; } catch (e) { return null; }
+};
 
 // Distinct non-empty values already used for a field, for the type-ahead lists.
 const usedValues = (contents, key, extra = []) =>
@@ -15,7 +24,7 @@ export function ContentModal({ content, contents, accounts, defaultDate, prefill
   const [form, setForm] = useState({
     title: c.title || '',
     platform: c.platform || (PLATFORMS[0] && PLATFORMS[0].id),
-    account_id: c.account_id || '',
+    account_id: c.account_id || (content ? '' : activeAccountId() || ''), // new posts go to the account in the switcher
     format: c.format || 'feed',
     status: c.status || (defaultDate ? 'scheduled' : 'idea'),
     scheduled_local: toDatetimeLocal(c.scheduled_at) || (defaultDate ? toDatetimeLocal(defaultDate) : ''),
@@ -28,6 +37,8 @@ export function ContentModal({ content, contents, accounts, defaultDate, prefill
     assignee: c.assignee || '',
     hook: c.hook || '',
     cta: c.cta || '',
+    inspo1: c.inspo1 || '',
+    inspo2: c.inspo2 || '',
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -62,6 +73,8 @@ export function ContentModal({ content, contents, accounts, defaultDate, prefill
       assignee: form.assignee.trim(),
       hook: form.hook,
       cta: form.cta.trim(),
+      inspo1: inspoHref(form.inspo1) || form.inspo1.trim(),
+      inspo2: inspoHref(form.inspo2) || form.inspo2.trim(),
     };
     try {
       await onSubmit(patch, content ? content.id : null);
@@ -85,6 +98,17 @@ export function ContentModal({ content, contents, accounts, defaultDate, prefill
     </div>`;
 
   const list = (id, values) => html`<datalist id=${id}>${values.map((v) => html`<option value=${v} />`)}</datalist>`;
+  // Inspo link field: the URL box, plus an "Open ↗" button once it holds a real link.
+  const inspoField = (key, label) => {
+    const href = inspoHref(form[key]);
+    return html`<div class="field">
+      <label>${label}</label>
+      <div style=${{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+        <input type="url" value=${form[key]} onInput=${set(key)} placeholder="Paste a TikTok / Instagram / YouTube link" style=${{ flex: 1, minWidth: 0 }} />
+        ${href ? html`<a class="btn btn-sm" href=${href} target="_blank" rel="noopener" title=${href} style=${{ whiteSpace: 'nowrap', textDecoration: 'none' }}>Open ↗</a>` : ''}
+      </div>
+    </div>`;
+  };
 
   return html`<${Modal} title=${content ? 'Edit content' : 'New content'} onClose=${onClose} footer=${footer}>
     ${err ? html`<div class="toast toast-err" style=${{ marginBottom: '12px' }}>${err}</div>` : ''}
@@ -166,6 +190,11 @@ export function ContentModal({ content, contents, accounts, defaultDate, prefill
     <div class="field">
       <label>Call-to-action</label>
       <input value=${form.cta} onInput=${set('cta')} placeholder="e.g. Tap the yellow basket · Comment 'NAK' for the link" />
+    </div>
+
+    <div class="field-row">
+      ${inspoField('inspo1', 'Inspo 1')}
+      ${inspoField('inspo2', 'Inspo 2')}
     </div>
 
     <div class="field">

@@ -3,6 +3,7 @@ import { useRemembered } from '../lib/remember.js';
 import { useState } from 'preact/hooks';
 import { Icon, Modal } from '../components/ui.js';
 import { readKV, writeKV } from '../lib/kv.js';
+import { studioName } from '../lib/account.js';
 import { compact, withThousands, periodTrend } from '../lib/metrics.js';
 import { shortMonth, dayKey, addDays, startOfWeek, startOfDay } from '../lib/date.js';
 
@@ -180,21 +181,21 @@ export function Targets({ contents, metricsHistory }) {
   const cards = p.target == null ? null : p.needsStudio ? [
     { label: `Target · ${ymLabel(p.ym)}`, value: compact(p.target), sub: 'month finished' },
     { label: 'Estimated views', value: '≈' + compact(p.done),
-      sub: p.source === 'sync' ? `daily-sync estimate · not official` : `TikTok Studio, 1–${p.asOfDay} ${mon} only` },
-    { label: 'Result', value: 'Needs Studio total', sub: `capture 1–${p.n} ${mon} from TikTok Studio` },
+      sub: p.source === 'sync' ? `daily-sync estimate · not official` : `${studioName()}, 1–${p.asOfDay} ${mon} only` },
+    { label: 'Result', value: `Needs ${studioName()} total`, sub: `capture 1–${p.n} ${mon} from ${studioName()}` },
     { label: 'Versus target', value: `≈${pct(p.done, p.target)}%`, sub: 'estimate — not counted' },
   ] : [
     { label: `Target · ${ymLabel(p.ym)}`, value: compact(p.target),
       sub: p.final ? 'month finished' : p.asOfDay ? `day ${p.asOfDay} of ${p.n}` : p.isCur || p.isPast ? 'no numbers yet' : 'starts soon' },
     { label: p.final ? 'Final views' : 'Done so far', value: p.done != null ? compact(p.done) : '—',
-      sub: p.done != null ? `${pct(p.done, p.target)}% of target · ${p.source === 'sync' ? `daily sync, ${asOfText}` : 'TikTok Studio'}` : 'appears after the daily sync' },
+      sub: p.done != null ? `${pct(p.done, p.target)}% of target · ${p.source === 'sync' ? `daily sync, ${asOfText}` : studioName()}` : 'appears after the daily sync' },
     p.final
       ? { label: 'Result', value: p.done >= p.target ? '✅ Hit' : `${compact(p.target - p.done)} short`,
           sub: p.done >= p.target ? `${signed(p.done - p.target)} above target` : 'missed this month', tone: p.done >= p.target ? 'good' : 'bad' }
       : { label: 'Status', value: diff == null ? '—' : `${signed(diff)} ${diff >= 0 ? 'ahead' : 'behind'}`,
           sub: diff == null ? 'needs a few days of numbers' : `should be at ${compact(p.expected)} ${asOfText}`, tone: diff == null ? null : diff >= 0 ? 'good' : 'bad' },
     p.final
-      ? { label: 'Versus target', value: `${pct(p.done, p.target)}%`, sub: p.source === 'studio' ? 'final · TikTok Studio' : 'daily sync estimate' }
+      ? { label: 'Versus target', value: `${pct(p.done, p.target)}%`, sub: p.source === 'studio' ? `final · ${studioName()}` : 'daily sync estimate' }
       : remaining != null && remaining <= 0
       ? { label: 'Needed per day', value: '🎉 Done', sub: 'target already reached', tone: 'good' }
       : { label: 'Needed per day', value: remaining != null && daysLeft > 0 ? compact(Math.round(remaining / daysLeft)) : '—',
@@ -259,14 +260,14 @@ export function Targets({ contents, metricsHistory }) {
             : html`<div class="empty" style=${{ padding: '40px 24px' }}>${p.isPast
                 ? `No day-by-day numbers for ${ymLabel(p.ym)} — daily tracking started later, so only the month total is known.`
                 : `No day-by-day numbers for ${ymLabel(p.ym)} yet — they appear after the daily TikTok sync runs.`}${p.done != null
-                ? html`<br/>${p.final ? 'Month total' : 'TikTok Studio so far'}: <strong>${compact(p.done)}</strong>${p.final || !p.asOfDay ? '' : ` (to day ${p.asOfDay})`}.` : ''}</div>`}
+                ? html`<br/>${p.final ? 'Month total' : `${studioName()} so far`}: <strong>${compact(p.done)}</strong>${p.final || !p.asOfDay ? '' : ` (to day ${p.asOfDay})`}.` : ''}</div>`}
           ${p.forecast != null && p.target ? html`<div class="muted" style=${{ fontSize: '12.5px', marginTop: '8px' }}>🔮 At this pace ${ymLabel(p.ym).split(' ')[0]} ends around <strong>${compact(p.forecast)}</strong> — ${pct(p.forecast, p.target)}% of target.</div>` : ''}`
         : html`
           <div class="tgt-legend">
             <span><i class="sq" style=${{ background: '#0f9d58' }}></i>Hit target</span>
             <span><i class="sq" style=${{ background: '#e5484d' }}></i>Missed</span>
             <span><i class="sq" style=${{ background: '#f5b517' }}></i>In progress</span>
-            ${months.some((m) => m.needsStudio) ? html`<span><i class="sq" style=${{ background: '#b8bfcc' }}></i>Estimate — needs TikTok Studio total</span>` : ''}
+            ${months.some((m) => m.needsStudio) ? html`<span><i class="sq" style=${{ background: '#b8bfcc' }}></i>Estimate — needs ${studioName()} total</span>` : ''}
             ${months.some((m) => m.isCur && m.target != null) ? html`<span><i style=${{ borderTop: '2px dashed #1f2430' }}></i>This month's target</span>` : ''}
             ${months.some((m) => m.target == null && m.done != null) ? html`<span><i class="sq" style=${{ background: '#cfd6f5' }}></i>No target set</span>` : ''}
           </div>
@@ -321,10 +322,10 @@ function MonthTable({ months, cfg, rowEdit, setRowEdit, setErr, saveRow, resetRo
           const editingRow = rowEdit && rowEdit.ym === m.ym;
           const p = m.needsStudio ? null : pct(m.final ? m.done : m.forecast, m.target);
           const status = m.target == null ? ['No target set', 'tgt-muted']
-            : m.needsStudio ? ['Needs Studio total', 'tgt-muted']
+            : m.needsStudio ? [`Needs ${studioName()} total`, 'tgt-muted']
             : m.final ? (m.done >= m.target ? ['✅ Hit', 'tgt-hit-chip'] : ['Missed', 'tgt-miss-chip'])
             : m.isCur ? ['In progress', 'tgt-cur-chip']
-            : m.isPast ? ['Capture from Studio', 'tgt-muted'] : ['Upcoming', 'tgt-muted'];
+            : m.isPast ? [`Capture from ${studioName()}`, 'tgt-muted'] : ['Upcoming', 'tgt-muted'];
           return html`<tr style=${m.isCur ? { background: '#fff7e6' } : {}}>
             <td><strong>${ymLabel(m.ym)}</strong></td>
             <td>${editingRow
@@ -492,12 +493,12 @@ function MonthBars({ months }) {
     const lines = [ymLabel(m.ym)];
     if (m.target != null) lines.push(`Target  ${withThousands(m.target)}`);
     else if (m.done != null) lines.push('No target set');
-    if (m.needsStudio) lines.push(`Estimate  ≈${withThousands(Math.round(m.done))}`, 'Needs the TikTok Studio total');
+    if (m.needsStudio) lines.push(`Estimate  ≈${withThousands(Math.round(m.done))}`, `Needs the ${studioName()} total`);
     else if (m.done != null) lines.push(`${m.final ? 'Views' : 'So far'}  ${withThousands(Math.round(m.done))}${m.final ? '' : ` (to day ${m.asOfDay})`}`);
     if (!m.final && m.forecast != null) lines.push(`Forecast  ${withThousands(m.forecast)}`);
     const v = m.needsStudio ? null : m.final ? m.done : m.forecast;
     if (v != null && m.target) lines.push(`${Math.round((v / m.target) * 100)}% of target${m.final ? '' : ' (forecast)'}`);
-    if (m.done == null && m.isPast) lines.push('Capture this month from TikTok Studio');
+    if (m.done == null && m.isPast) lines.push(`Capture this month from ${studioName()}`);
     if (!m.isPast && !m.isCur) lines.push('Upcoming');
     const boxW = Math.max(...lines.map((l) => l.length)) * 6 + 18, boxH = lines.length * 14 + 10;
     let bx = cx(hover) + bw / 2 + 8;

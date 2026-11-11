@@ -3,10 +3,45 @@ import { useState, useEffect } from 'preact/hooks';
 import { store, isCloud, config } from '../lib/store.js';
 import { Icon } from '../components/ui.js';
 
-// TikTok connection card shown on the Analytics screen. Cloud mode only
-// (needs a signed-in user id to tie the connection + synced videos to).
+// Send the browser to TikTok's approval page. `another`: make TikTok show its
+// sign-in screen instead of silently approving whichever account this browser is
+// already logged in to. Returns an error message, or nothing once redirecting.
+export async function startTikTokConnect(another = false) {
+  const { data } = await store.client.auth.getSession();
+  const uid = data?.session?.user?.id;
+  if (!uid) return 'Please sign in first.';
+  const t = config.tiktok;
+  window.location.href = t.authorizeUrl +
+    '?client_key=' + encodeURIComponent(t.clientKey) +
+    '&scope=' + encodeURIComponent(t.scopes) +
+    '&response_type=code' +
+    '&redirect_uri=' + encodeURIComponent(t.redirectUri) +
+    '&state=' + encodeURIComponent(uid) +
+    (another ? '&disable_auto_auth=1' : '');
+}
+
+// Send the browser to Facebook Login for Business (Instagram via Facebook Pages). The user picks the Facebook
+// Page(s) whose Instagram account the planner may read; instagram-callback stores
+// one connection per Instagram account found.
+export async function startInstagramConnect() {
+  const { data } = await store.client.auth.getSession();
+  const uid = data?.session?.user?.id;
+  if (!uid) return 'Please sign in first.';
+  const ig = config.instagram;
+  if (!ig) return 'Instagram is not set up in config.js.';
+  window.location.href = ig.authorizeUrl +
+    '?client_id=' + encodeURIComponent(ig.appId) +
+    '&config_id=' + encodeURIComponent(ig.configId) +
+    '&response_type=code' +
+    '&redirect_uri=' + encodeURIComponent(ig.redirectUri) +
+    '&state=' + encodeURIComponent(uid);
+}
+
+// Connections card shown on the Analytics screen. Cloud mode only (needs a
+// signed-in user id to tie the connection + synced posts to). A login can connect
+// several TikTok and Instagram accounts; Refresh syncs all of them.
 export function TikTokConnect({ onSynced }) {
-  const [status, setStatus] = useState(null);
+  const [conns, setConns] = useState([]);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -15,19 +50,24 @@ export function TikTokConnect({ onSynced }) {
     try {
       const { data } = await store.client
         .from('integrations')
-        .select('display_name,last_synced_at')
-        .eq('platform', 'tiktok')
-        .maybeSingle();
-      setStatus(data || null);
+        .select('platform,display_name,last_synced_at')
+        .in('platform', ['tiktok', 'instagram'])
+        .order('created_at');
+      setConns(data || []);
     } catch (e) { /* ignore */ }
   };
 
   useEffect(() => {
     const h = location.hash || '';
-    if (h.includes('tiktok=connected')) setMsg({ ok: true, text: 'TikTok connected! Click “Sync now” to pull your videos.' });
+    if (h.includes('tiktok=connected')) setMsg({ ok: true, text: 'TikTok connected! Click “Refresh” to pull its videos.' });
     else if (h.includes('tiktok=error')) setMsg({ ok: false, text: 'TikTok connection failed — please try Connect again.' });
+    else if (h.includes('instagram=connected')) setMsg({ ok: true, text: 'Instagram connected! Click “Refresh” to pull its posts.' });
+    else if (h.includes('instagram=none')) setMsg({ ok: false, text: 'Facebook connected, but none of the Pages you picked has an Instagram professional account linked. Link the Instagram account to its Facebook Page, then connect again.' });
+    else if (h.includes('instagram=error')) setMsg({ ok: false, text: 'Instagram connection failed — please try again.' });
     load();
   }, []);
+  const tiktokConns = conns.filter((c) => c.platform === 'tiktok');
+  const igConns = conns.filter((c) => c.platform === 'instagram');
 
   if (!isCloud) {
     return html`<div class="card card-pad section-gap">
@@ -36,30 +76,32 @@ export function TikTokConnect({ onSynced }) {
     </div>`;
   }
 
-  const connect = async () => {
-    const { data } = await store.client.auth.getSession();
-    const uid = data?.session?.user?.id;
-    if (!uid) { setMsg({ ok: false, text: 'Please sign in first.' }); return; }
-    const t = config.tiktok;
-    const url = t.authorizeUrl +
-      '?client_key=' + encodeURIComponent(t.clientKey) +
-      '&scope=' + encodeURIComponent(t.scopes) +
-      '&response_type=code' +
-      '&redirect_uri=' + encodeURIComponent(t.redirectUri) +
-      '&state=' + encodeURIComponent(uid);
-    window.location.href = url;
+  const connect = async (another = false) => {
+    const err = await startTikTokConnect(another);
+    if (err) setMsg({ ok: false, text: err });
   };
 
+  const connectInstagram = async () => {
+    const err = await startInstagramConnect();
+    if (err) setMsg({ ok: false, text: err });
+  };
+
+  // Sync every platform that has a connection; report each one's result.
   const syncNow = async () => {
     setBusy(true); setMsg(null);
     try {
       const { data: s } = await store.client.auth.getSession();
-      const { data, error } = await store.client.functions.invoke('tiktok-sync', {
-        body: { user_id: s?.session?.user?.id },
-      });
-      if (error) throw error;
-      const pulled = (data?.results || []).reduce((n, r) => n + (r.pulled || 0), 0);
-      setMsg({ ok: true, text: `Synced ✓ — pulled ${pulled} video${pulled === 1 ? '' : 's'} from TikTok.` });
+      const body = { user_id: s?.session?.user?.id };
+      const fns = [tiktokConns.length ? 'tiktok-sync' : null, igConns.length ? 'instagram-sync' : null].filter(Boolean);
+      const replies = await Promise.all(fns.map((fn) => store.client.functions.invoke(fn, { body })));
+      const failedFn = replies.find((r) => r.error);
+      if (failedFn) throw failedFn.error;
+      const results = replies.flatMap((r) => r.data?.results || []);
+      const pulled = results.reduce((n, r) => n + (r.pulled || 0), 0);
+      const failed = results.filter((r) => r.error);
+      setMsg(failed.length
+        ? { ok: false, text: `Synced ${pulled} post${pulled === 1 ? '' : 's'}, but ${failed.map((r) => r.account || 'an account').join(', ')} failed — try reconnecting it.` }
+        : { ok: true, text: `Synced ✓ — pulled ${pulled} post${pulled === 1 ? '' : 's'} from ${results.length} account${results.length === 1 ? '' : 's'}.` });
       await load();
       onSynced && onSynced();
     } catch (e) {
@@ -68,22 +110,32 @@ export function TikTokConnect({ onSynced }) {
     setBusy(false);
   };
 
+  const line = (c) => html`<div class="muted" style=${{ fontSize: '12.5px', marginTop: '2px' }}>
+    ${c.platform === 'instagram' ? 'Instagram' : 'TikTok'} · connected as ${c.display_name || 'account'}
+    ${c.last_synced_at ? ' · last synced ' + new Date(c.last_synced_at).toLocaleString() : ' · not synced yet'}
+  </div>`;
+  const link = (label, onClick, title) => html`<span onClick=${onClick} title=${title || ''} style=${{ cursor: 'pointer', textDecoration: 'underline' }}>${label}</span>`;
+
   return html`<div class="card card-pad section-gap">
     <div style=${{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
       <div>
-        <div class="card-title">TikTok connection</div>
-        <div class="muted" style=${{ fontSize: '12.5px', marginTop: '2px' }}>
-          ${status
-            ? 'Connected' + (status.display_name ? ' as ' + status.display_name : '') +
-              (status.last_synced_at ? ' · last synced ' + new Date(status.last_synced_at).toLocaleString() : ' · not synced yet')
-            : 'Not connected yet — connect serigama.daily to auto-pull views, likes, comments & shares.'}
-          ${status ? html` · <span onClick=${connect} title="Reconnect TikTok" style=${{ cursor: 'pointer', textDecoration: 'underline' }}>reconnect</span>` : ''}
-        </div>
+        <div class="card-title">Connected accounts</div>
+        ${conns.length
+          ? conns.map(line)
+          : html`<div class="muted" style=${{ fontSize: '12.5px', marginTop: '2px' }}>Not connected yet — connect serigama.daily to auto-pull views, likes, comments & shares.</div>`}
+        ${conns.length
+          ? html`<div class="muted" style=${{ fontSize: '12.5px', marginTop: '4px' }}>
+              ${link('Connect another TikTok account', () => connect(true))}
+              · ${link(igConns.length ? 'Connect another Instagram account' : 'Connect Instagram', connectInstagram)}
+              · ${link('reconnect TikTok', () => connect(true), 'Sign in again to a connected TikTok account')}
+              ${igConns.length ? html` · ${link('reconnect Instagram', connectInstagram)}` : ''}
+            </div>`
+          : ''}
       </div>
       <div style=${{ display: 'flex', gap: '8px' }}>
-        ${status
+        ${conns.length
           ? html`<button class="btn btn-gold" onClick=${syncNow} disabled=${busy}><${Icon} name="refresh" size=${15} /> ${busy ? 'Refreshing…' : 'Refresh'}</button>`
-          : html`<button class="btn btn-gold" onClick=${connect}>Connect TikTok</button>`}
+          : html`<button class="btn btn-gold" onClick=${() => connect(false)}>Connect TikTok</button>`}
       </div>
     </div>
     ${msg ? html`<div class=${'toast' + (msg.ok ? '' : ' toast-err')} style=${{ marginTop: '12px' }}>${msg.text}</div>` : null}

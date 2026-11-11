@@ -17,6 +17,41 @@ export function makeSupabaseStore(url, anonKey) {
   };
 
   // Attach the latest metric row to each content as `.metrics` (or null).
+  // Read a whole table past PostgREST's 1000-rows-per-response cap: count it first,
+  // then fetch the pages in parallel (6 at a time) instead of one after another.
+  const PAGE = 1000;
+  async function fetchAllRows(table, columns, orderCol) {
+    const { count, error } = await sb.from(table).select('id', { count: 'exact', head: true });
+    if (error) throw error;
+    const pages = Math.max(1, Math.ceil((count || 0) / PAGE));
+    const out = new Array(pages);
+    let next = 0;
+    const worker = async () => {
+      while (next < pages) {
+        const p = next++;
+        const { data, error: e } = await sb.from(table).select(columns)
+          .order(orderCol, { ascending: true }).order('id', { ascending: true })
+          .range(p * PAGE, p * PAGE + PAGE - 1);
+        if (e) throw e;
+        out[p] = data || [];
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(6, pages) }, worker));
+    return out.flat();
+  }
+  // content_metrics (~1 row per video per day) is needed by both listContents (latest
+  // per video) and listMetricsHistory (all rows). Download it once per data load,
+  // with only the columns the screens use.
+  const METRIC_COLS = 'content_id,reach,impressions,views,likes,comments,shares,engagement,engagement_rate,source,fetched_at';
+  let metricsInFlight = null;
+  function metricRowsOnce() {
+    if (!metricsInFlight) {
+      metricsInFlight = fetchAllRows('content_metrics', METRIC_COLS, 'fetched_at').catch(() => []);
+      metricsInFlight.finally(() => setTimeout(() => { metricsInFlight = null; }, 3000));
+    }
+    return metricsInFlight;
+  }
+
   function attachMetrics(contents, metricRows) {
     const latest = new Map();
     for (const m of metricRows || []) {
@@ -117,41 +152,16 @@ export function makeSupabaseStore(url, anonKey) {
     },
     async listMetricsHistory() {
       // Every snapshot row (not just the latest) so we can compute period deltas.
-      // Paginate — PostgREST caps a single response at 1000 rows, and this table
-      // grows by ~1 row per video per day, so it passes 1000 quickly.
-      const page = 1000;
-      let all = [];
-      for (let from = 0; ; from += page) {
-        const { data, error } = await sb
-          .from('content_metrics')
-          .select('content_id,views,likes,comments,shares,fetched_at')
-          .order('fetched_at', { ascending: true })
-          .range(from, from + page - 1);
-        if (error) return all;
-        all = all.concat(data || []);
-        if (!data || data.length < page) break;
-      }
-      return all;
+      const rows = await metricRowsOnce();
+      return [...rows].sort((a, b) => (a.fetched_at < b.fetched_at ? -1 : a.fetched_at > b.fetched_at ? 1 : 0));
     },
     async listContents() {
-      const { data: contents, error: e1 } = await sb.from('contents').select('*');
-      if (e1) throw e1;
-      // content_metrics grows ~1 row per video per day and blows past PostgREST's
-      // 1000-row cap, so a plain select('*') silently drops the NEWEST rows — recent
-      // days and brand-new videos — leaving those videos with stale or no metrics.
-      // Paginate (newest first) so every video's latest snapshot is included.
-      const page = 1000;
-      let metricRows = [];
-      for (let from = 0; ; from += page) {
-        const { data, error } = await sb
-          .from('content_metrics')
-          .select('*')
-          .order('fetched_at', { ascending: false })
-          .range(from, from + page - 1);
-        if (error) break;
-        metricRows = metricRows.concat(data || []);
-        if (!data || data.length < page) break;
-      }
+      // contents passed 1000 rows (Nov 2026: ~1,400 with serigama.hq), and PostgREST
+      // caps one response at 1000 — so read it in pages too, or items go missing.
+      const [contents, metricRows] = await Promise.all([
+        fetchAllRows('contents', '*', 'created_at'),
+        metricRowsOnce(),
+      ]);
       return attachMetrics(contents, metricRows);
     },
 

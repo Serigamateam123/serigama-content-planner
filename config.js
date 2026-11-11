@@ -28,4 +28,13 @@ window.PLANNER_CONFIG = {
     authorizeUrl: 'https://www.tiktok.com/v2/auth/authorize/',
     syncFnUrl: 'https://acfscrvvlzjtbsxturkx.supabase.co/functions/v1/tiktok-sync',
   },
+
+  // Instagram connection via Facebook Login for Business (Meta app "Serigama
+  // Content Planner"). Non-secret — the app SECRET lives only in Supabase.
+  instagram: {
+    appId: '1784689132823597',
+    configId: '1422746343402021', // login configuration "Planner Instagram read" (read-only permissions)
+    redirectUri: 'https://acfscrvvlzjtbsxturkx.supabase.co/functions/v1/instagram-callback',
+    authorizeUrl: 'https://www.facebook.com/v25.0/dialog/oauth',
+  },
 };

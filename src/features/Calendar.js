@@ -8,7 +8,12 @@ import { monthMatrix, monthYear, isSameDay, isSameMonth, dayKey, time, addDays, 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DEFAULT_HOUR = 10; // time given to a backlog post dropped onto a day
 
-export function Calendar({ contents, onNew, onOpen, onNewOnDate, onReschedule }) {
+// accounts / accountTag are set only in the "All accounts" view: each post then
+// shows which account it belongs to, and there's an account filter + legend.
+export function Calendar({ contents, accounts = null, accountTag = null, scopeLabel = '', onNew, onOpen, onNewOnDate, onReschedule }) {
+  const [acctFilter, setAcctFilter] = useState('all');
+  if (accounts && acctFilter !== 'all') contents = contents.filter((c) => { const t = accountTag && accountTag(c); return t && t.id === acctFilter; });
+  const tagEl = (c) => { const t = accountTag && accountTag(c); return t ? html`<span class="cal-acct" style=${{ color: t.color }}><i style=${{ background: t.color }}></i>${t.label}</span>` : null; };
   const [cursor, setCursor] = useRemembered('calendar.month', () => new Date(), { revive: (v) => new Date(v) });
   const [view, setView] = useRemembered('calendar.view', 'month');
   // status 'active' = everything except taken-down posts (the default).
@@ -86,14 +91,14 @@ export function Calendar({ contents, onNew, onOpen, onNewOnDate, onReschedule })
     ...${dragProps(c)}
     onClick=${(e) => { e.stopPropagation(); onOpen(c); }}>
     <div class="t">${c.title}</div>
-    <div class="m">${time(c.scheduled_at)} · ${_platformShort(c.platform)}${c.status !== 'scheduled' ? html` · <span class=${'st st-' + c.status}>${_statusShort(c.status)}</span>` : ''}</div>
+    <div class="m">${time(c.scheduled_at)} · ${tagEl(c) || _platformShort(c.platform)}${c.status !== 'scheduled' ? html` · <span class=${'st st-' + c.status}>${_statusShort(c.status)}</span>` : ''}</div>
   </div>`;
 
   return html`<div>
     <div class="page-head">
       <div>
         <div class="eyebrow">Planning</div>
-        <h1 class="page-title">Content Calendar</h1>
+        <h1 class="page-title">Content Calendar${scopeLabel ? html` <span class="muted" style=${{ fontWeight: 500, fontSize: '0.6em' }}>· ${scopeLabel}</span>` : ''}</h1>
       </div>
       <div class="page-actions">
         <button class="btn btn-gold" onClick=${onNew}><${Icon} name="plus" size=${15} /> Add content</button>
@@ -115,6 +120,10 @@ export function Calendar({ contents, onNew, onOpen, onNewOnDate, onReschedule })
     </div>
 
     <div class="cal-filters">
+      ${accounts ? html`<select class="hdr-select" value=${acctFilter} onChange=${(e) => setAcctFilter(e.target.value)} aria-label="Account">
+        <option value="all">All accounts</option>
+        ${accounts.map((a) => html`<option value=${a.id}>${a.label}</option>`)}
+      </select>` : ''}
       <select class="hdr-select" value=${filters.platform} onChange=${setF('platform')} aria-label="Platform">
         <option value="all">All platforms</option>
         ${PLATFORMS.map((p) => html`<option value=${p.id}>${p.label}</option>`)}
@@ -136,6 +145,8 @@ export function Calendar({ contents, onNew, onOpen, onNewOnDate, onReschedule })
     <div class="legend" style=${{ marginBottom: '14px' }}>
       ${FUNNELS.map((f) => html`<span class="legend-item"><span class="dot" style=${{ background: f.accent }}></span>${f.name}</span>`)}
       <span class="legend-item"><span class="dot" style=${{ background: 'var(--muted-2)' }}></span>Not tagged</span>
+      ${accounts ? html`<span class="legend-item" style=${{ marginLeft: '8px', fontWeight: 600 }}>Accounts:</span>
+        ${accounts.map((a) => html`<span class="legend-item"><span class="dot" style=${{ background: a.color }}></span>${a.label}</span>`)}` : ''}
     </div>
 
     ${backlog.length > 0 || dragId
@@ -148,7 +159,7 @@ export function Calendar({ contents, onNew, onOpen, onNewOnDate, onReschedule })
             ${backlog.map(
               (c) => html`<div class=${'chip' + (c.id === dragId ? ' dragging' : '')} style=${{ borderLeftColor: funnelColor(c.funnel_stage) }} ...${dragProps(c)} onClick=${() => onOpen(c)}>
                 <div class="chip-title">${c.title}</div>
-                <div class="chip-meta"><${Badge} status=${c.status} /> <${Platform} id=${c.platform} /></div>
+                <div class="chip-meta"><${Badge} status=${c.status} /> ${tagEl(c) || html`<${Platform} id=${c.platform} />`}</div>
               </div>`
             )}
           </div>

@@ -1,10 +1,12 @@
 import { html } from '../lib/html.js';
 import { useRemembered } from '../lib/remember.js';
-import { useState } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import { Kpi, Icon, Empty } from '../components/ui.js';
 import { TrendChart } from './TrendChart.js';
 import { TikTokConnect } from './TikTokConnect.js';
 import { analytics, compact, withThousands, erOf, engagementOf, periodMetrics, daysOfHistory, applyFilters, engagementExtras, ceilingFloor } from '../lib/metrics.js';
+import { readKV } from '../lib/kv.js';
+import { insightSource, isInstagram } from '../lib/account.js';
 
 // Unicode-block sparkline from a list of numbers (shared by monthly + engagement).
 function sparkline(vals) {
@@ -53,7 +55,10 @@ export function Analytics({ contents, accounts, accountStats, metricsHistory, on
     if (!q.has('from') && !q.has('to')) return null;
     return { ...DEFAULTS, from: q.get('from') || '', to: q.get('to') || '', preset: q.get('preset') || 'custom' };
   })();
-  const [f, setF] = useRemembered('performance.filters', DEFAULTS, { override: fromLink });
+  // The account comes from the sidebar switcher (contents arrive pre-filtered), so
+  // an account id remembered from the old per-page filter is ignored.
+  const [fSaved, setF] = useRemembered('performance.filters', DEFAULTS, { override: fromLink });
+  const f = { ...fSaved, account_id: 'all' };
   const [draft, setDraft] = useState(f);
   const [showEntry, setShowEntry] = useState(false);
   const [sel, setSel] = useState(null); // which KPI tile is expanded
@@ -121,13 +126,6 @@ export function Analytics({ contents, accounts, accountStats, metricsHistory, on
             <option value="all">All funnel stages</option>
             ${FUNNELS.map((fu) => html`<option value=${fu.id}>${fu.emoji} ${fu.name}</option>`)}
             <option value="none">Not tagged</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Account</label>
-          <select value=${draft.account_id} onChange=${dset('account_id')}>
-            <option value="all">All accounts</option>
-            ${accounts.map((ac) => html`<option value=${ac.id}>${ac.display_name || ac.handle}</option>`)}
           </select>
         </div>
         <div class="field">
@@ -201,10 +199,224 @@ export function Analytics({ contents, accounts, accountStats, metricsHistory, on
       <${MonthlyReport} contents=${contents} />
     ` : ''}
 
+    ${isInstagram() ? html`<${InstagramSplit} posts=${a.published} />` : ''}
+
     ${showEntry
       ? html`<${MetricsEntry} contents=${publishedAll} onSave=${onSaveMetrics} />`
       : null}
   </div>`;
+}
+
+// Instagram only: the posts in view split into Feed (photos / carousels) and Reels.
+// Per reel, Instagram's API gives views, reach, likes, comments, shares, saves and
+// watch time (app_kv `serigama.reels`, keyed by post id). It does NOT give followers
+// gained, followers vs non-followers or view sources per reel, so those are shown
+// account-wide (from the monthly record and the audience record, both per account).
+const IG_FORMAT = { REEL: 'Reels', REELS: 'Reels', POST: 'Feed posts', FEED: 'Feed posts', CAROUSEL_CONTAINER: 'Carousels', CAROUSEL_ALBUM: 'Carousels', STORY: 'Stories', AD: 'Ads', IGTV: 'Videos', LIVE: 'Live' };
+const igFormatName = (k) => IG_FORMAT[String(k).toUpperCase()] || String(k).toLowerCase().replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+
+function InstagramSplit({ posts }) {
+  const [showAll, setShowAll] = useState({ feed: false, reels: false });
+  const extras = readKV('serigama.reels', {}) || {};
+  const monthly = (readKV('serigama.monthly', {}) || {}).months || {};
+  const aud = readKV('serigama.audience', null);
+  const all = (posts || []).filter((c) => c.platform === 'instagram');
+  const reels = all.filter((c) => c.format === 'reel');
+  const feed = all.filter((c) => c.format !== 'reel');
+  const num = (v) => Number(v) || 0;
+  const views = (c) => num(c.metrics && c.metrics.views);
+  const byViews = (list) => [...list].sort((x, y) => views(y) - views(x));
+  const clip = (t) => { t = (t || '(untitled)').trim().split('\n')[0]; return t.length > 46 ? t.slice(0, 46) + '…' : t; };
+  const day = (c) => (c.published_at ? new Date(c.published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—');
+  // Plain title + a round play button that plays the post inside the planner
+  // (Instagram's embed player, which works without being signed in to Instagram).
+  const [playing, setPlaying] = useState(null);
+  const playBtn = (c) => html`<button type="button" onClick=${() => setPlaying(c)} title="Play" aria-label=${'Play ' + clip(c.title)}
+    style=${{ flex: '0 0 auto', width: '26px', height: '26px', padding: 0, border: 'none', cursor: 'pointer', borderRadius: '50%', background: 'linear-gradient(135deg, #f58529, #dd2a7b 50%, #8134af)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+    <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z" fill="#fff"/></svg></button>`;
+  const titleCell = (c) => html`<td class="atable-title" style=${{ minWidth: '220px' }}>
+    <div style=${{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      ${c.post_url ? playBtn(c) : ''}<span>${clip(c.title)}</span>
+    </div></td>`;
+  const sum = (list, f) => list.reduce((n, c) => n + f(c), 0);
+  const watchSec = (c) => { const ms = (extras[String(c.external_id)] || {}).ig_reels_avg_watch_time; return ms != null ? Math.round(num(ms) / 100) / 10 : null; };
+  const web = readKV('serigama.reelsweb', {}) || {};
+  const webOf = (c) => web[String(c.external_id)] || null;
+  const follows = (c) => (c.newFollowers != null ? c.newFollowers : (webOf(c) ? webOf(c).follows : null));
+  const withFollows = reels.filter((c) => follows(c) != null);
+  const followsSum = sum(withFollows, follows);
+  const topFollow = [...withFollows].sort((a, b) => follows(b) - follows(a))[0];
+  const webDate = Object.values(web).map((x) => x.capturedAt).sort().pop();
+  const withWatch = reels.filter((c) => watchSec(c) != null);
+  const avgWatch = withWatch.length ? Math.round((sum(withWatch, watchSec) / withWatch.length) * 10) / 10 : null;
+
+  // Account-wide splits from the latest month that has them.
+  const monthKey = Object.keys(monthly).filter((k) => monthly[k].viewsByFormat || monthly[k].viewsByFollowType).sort().pop();
+  const mrec = monthKey ? monthly[monthKey] : null;
+  const monthName = mrec ? `${mrec.label}${mrec.complete ? '' : ` 1–${mrec.days}`}` : '';
+  const shares = (obj) => { const t = Object.values(obj || {}).reduce((n, v) => n + num(v), 0); return t ? Object.entries(obj).map(([k, v]) => ({ k, v: num(v), pct: Math.round((num(v) / t) * 100) })).sort((p, q) => q.v - p.v) : []; };
+  const formatRows = shares(mrec && mrec.viewsByFormat).filter((r) => r.pct > 0).map((r) => ({ ...r, name: igFormatName(r.k) }));
+  const ft = mrec && mrec.viewsByFollowType;
+  const folV = ft ? num(ft.FOLLOWER) : 0, nonV = ft ? num(ft.NON_FOLLOWER) : 0, ftT = folV + nonV;
+  const pctOf = (v) => { const p = (v / ftT) * 100; return (p > 0 && p < 10) || (p > 90 && p < 100) ? Math.round(p * 10) / 10 : Math.round(p); };
+
+  const tile = (color, label, value, sub) => html`<div class="kpi" style=${{ borderTop: '3px solid ' + color, boxShadow: 'none', padding: '12px 14px' }}>
+    <div class="kpi-label">${label}</div><div class="kpi-value" style=${{ fontSize: '22px' }}>${value}</div>${sub ? html`<div class="kpi-sub">${sub}</div>` : ''}
+  </div>`;
+  const tiles = (children) => html`<div class="kpi-row" style=${{ gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', margin: '10px 0' }}>${children}</div>`;
+  const more = (key, list) => (list.length > 10 ? html`<button class="btn btn-ghost btn-sm" style=${{ marginTop: '6px' }} onClick=${() => setShowAll((s) => ({ ...s, [key]: !s[key] }))}>${showAll[key] ? 'Show top 10' : `Show all ${list.length}`}</button>` : '');
+  const bar = (label, pct, color) => html`<div style=${{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '12.5px', padding: '3px 0' }}>
+    <span style=${{ width: '96px' }}>${label}</span>${pctBar(pct, color)}<strong style=${{ width: '42px', textAlign: 'right' }}>${pct}%</strong></div>`;
+
+  const feedRows = byViews(feed).slice(0, showAll.feed ? undefined : 10);
+  const reelRows = byViews(reels).slice(0, showAll.reels ? undefined : 10);
+
+  return html`<div>
+    <div class="card card-pad section-gap">
+      <div class="card-title">📷 Feed posts <span class="muted" style=${{ fontWeight: 400 }}>(${feed.length} — photos & carousels in this range)</span></div>
+      ${feed.length ? html`
+        ${tiles(html`
+          ${tile('#6366f1', 'Views', compact(sum(feed, views)))}
+          ${tile('#ec4899', '❤️ Likes', compact(sum(feed, (c) => num(c.metrics.likes))))}
+          ${tile('#3b82f6', '💬 Comments', compact(sum(feed, (c) => num(c.metrics.comments))))}
+          ${tile('#22c55e', '🔁 Shares', compact(sum(feed, (c) => num(c.metrics.shares))))}
+          ${tile('#f59e0b', '🔖 Saves', compact(sum(feed, (c) => num(c.saves))))}`)}
+        <div style=${{ overflowX: 'auto' }}><table class="atable">
+          <thead><tr><th>Post</th><th>Date</th><th>Views</th><th>Reach</th><th>Likes</th><th>Comments</th><th>Shares</th><th>Saves</th></tr></thead>
+          <tbody>${feedRows.map((c) => html`<tr>${titleCell(c)}<td>${day(c)}</td><td>${compact(views(c))}</td><td>${compact(num(c.metrics.reach))}</td><td>${compact(num(c.metrics.likes))}</td><td>${compact(num(c.metrics.comments))}</td><td>${compact(num(c.metrics.shares))}</td><td>${compact(num(c.saves))}</td></tr>`)}</tbody>
+        </table></div>
+        ${more('feed', feed)}` : html`<p class="muted" style=${{ fontSize: '12.5px', margin: '8px 0 0' }}>No feed posts in this range.</p>`}
+    </div>
+
+    <div class="card card-pad section-gap">
+      <div class="card-title">🎬 Reels <span class="muted" style=${{ fontWeight: 400 }}>(${reels.length} in this range)</span></div>
+      ${reels.length ? html`
+        ${tiles(html`
+          ${tile('#6366f1', 'Views', compact(sum(reels, views)))}
+          ${tile('#ec4899', '❤️ Likes', compact(sum(reels, (c) => num(c.metrics.likes))))}
+          ${tile('#3b82f6', '💬 Comments', compact(sum(reels, (c) => num(c.metrics.comments))))}
+          ${tile('#22c55e', '🔁 Shares', compact(sum(reels, (c) => num(c.metrics.shares))))}
+          ${tile('#f59e0b', '🔖 Saves', compact(sum(reels, (c) => num(c.saves))))}
+          ${tile('#0ea5e9', '⏱️ Avg watch', avgWatch != null ? avgWatch + 's' : '—', avgWatch != null ? 'per view, these reels' : 'after the next sync')}
+          ${tile('#0f7a4d', '👥 Followers gained', withFollows.length ? '+' + withThousands(followsSum) : '—', withFollows.length ? (withFollows.length < reels.length ? `from ${withFollows.length} of ${reels.length} reels` : 'from these reels') : 'next Thursday capture')}`)}
+
+        <div style=${{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', margin: '4px 0 12px' }}>
+          <div class="eng-notes" style=${{ margin: 0 }}>
+            <div class="eng-notes-title">👥 Follows & unfollows <span class="muted" style=${{ fontWeight: 400 }}>(whole account)</span></div>
+            ${aud && aud.follows28d != null ? html`
+              <div style=${{ fontSize: '12.5px', lineHeight: 1.7 }}>
+                Last 7 days: <strong style=${{ color: '#0f7a4d' }}>+${withThousands(aud.follows7d || 0)}</strong> follows · <strong style=${{ color: '#b4232a' }}>−${withThousands(aud.unfollows7d || 0)}</strong> unfollows<br/>
+                Last 28 days: <strong style=${{ color: '#0f7a4d' }}>+${withThousands(aud.follows28d || 0)}</strong> follows · <strong style=${{ color: '#b4232a' }}>−${withThousands(aud.unfollows28d || 0)}</strong> unfollows
+              </div>`
+              : html`<div class="muted" style=${{ fontSize: '12px' }}>Appears after the next sync.</div>`}
+            <div class="muted" style=${{ fontSize: '11px', marginTop: '4px' }}>${topFollow && follows(topFollow) > 0 ? html`Top reel for followers: <strong>“${clip(topFollow.title)}”</strong> (+${withThousands(follows(topFollow))}). ` : ''}Unfollows are only reported for the whole account.</div>
+          </div>
+          <div class="eng-notes" style=${{ margin: 0 }}>
+            <div class="eng-notes-title">👀 Followers vs non-followers <span class="muted" style=${{ fontWeight: 400 }}>(account views${monthName ? ', ' + monthName : ''})</span></div>
+            ${ftT ? html`
+              <div style=${{ display: 'flex', height: '16px', borderRadius: '5px', overflow: 'hidden', margin: '6px 0 8px' }}>
+                <div style=${{ width: Math.round((folV / ftT) * 100) + '%', background: '#3b82f6' }} title="Followers"></div>
+                <div style=${{ width: Math.round((nonV / ftT) * 100) + '%', background: '#f59e0b' }} title="Non-followers"></div>
+              </div>
+              <div style=${{ fontSize: '12.5px' }}><span style=${{ color: '#3b82f6', fontWeight: 700 }}>Followers ${pctOf(folV)}%</span> · <span style=${{ color: '#b7791f', fontWeight: 700 }}>Non-followers ${pctOf(nonV)}%</span></div>
+              <div class="muted" style=${{ fontSize: '11px', marginTop: '4px' }}>Non-follower views are new people finding you — that's where new followers come from.</div>`
+              : html`<div class="muted" style=${{ fontSize: '12px' }}>Appears after the next sync (Instagram doesn't split this per reel).</div>`}
+          </div>
+          <div class="eng-notes" style=${{ margin: 0 }}>
+            <div class="eng-notes-title">📍 Where views came from <span class="muted" style=${{ fontWeight: 400 }}>(account views by format${monthName ? ', ' + monthName : ''})</span></div>
+            ${formatRows.length ? formatRows.slice(0, 5).map((r) => bar(r.name, r.pct, '#6366f1'))
+              : html`<div class="muted" style=${{ fontSize: '12px' }}>Appears after the next sync. Instagram doesn't report Explore / Reels-tab sources through its API.</div>`}
+          </div>
+        </div>
+
+        <div style=${{ overflowX: 'auto' }}><table class="atable">
+          <thead><tr><th>Reel</th><th>Date</th><th>Views</th><th>Reach</th><th>Likes</th><th>Comments</th><th>Shares</th><th>Saves</th><th>Avg watch</th><th title="Follows from this reel (instagram.com insights)">Follows</th><th title="Share of views from people who don't follow you">Non-followers</th></tr></thead>
+          <tbody>${reelRows.map((c) => { const w = watchSec(c); return html`<tr>
+            ${titleCell(c)}<td>${day(c)}</td><td>${compact(views(c))}</td><td>${compact(num(c.metrics.reach))}</td><td>${compact(num(c.metrics.likes))}</td><td>${compact(num(c.metrics.comments))}</td><td>${compact(num(c.metrics.shares))}</td><td>${compact(num(c.saves))}</td><td>${w != null ? w + 's' : '—'}</td><td>${follows(c) != null ? (follows(c) > 0 ? html`<strong style=${{ color: '#0f7a4d' }}>+${withThousands(follows(c))}</strong>` : '0') : '—'}</td><td>${webOf(c) ? webOf(c).nonFollowerViewsPct + '%' : '—'}</td>
+          </tr>`; })}</tbody>
+        </table></div>
+        ${more('reels', reels)}
+        <p class="muted" style=${{ fontSize: '11px', margin: '8px 0 0' }}>From Instagram, updated by the daily sync. Reach = accounts that saw the reel; views count repeat plays.${webDate ? ` Follows and non-followers come from instagram.com insights (captured ${new Date(webDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}, refreshed on Thursdays).` : ''}</p>` : html`<p class="muted" style=${{ fontSize: '12.5px', margin: '8px 0 0' }}>No reels in this range.</p>`}
+    </div>
+    <${IgViewers} aud=${aud} monthly=${monthly} posts=${all} />
+    ${playing ? html`<${IgPlayer} post=${playing} onClose=${() => setPlaying(null)} />` : ''}
+  </div>`;
+}
+
+// Pop-up player for one Instagram post, using Instagram's own embed page.
+function IgPlayer({ post, onClose }) {
+  const m = String(post.post_url || '').match(/instagram\.com\/(reel|reels|p|tv)\/([^/?#]+)/);
+  const kind = m && m[1] === 'p' ? 'p' : 'reel';
+  const src = m ? `https://www.instagram.com/${kind}/${m[2]}/embed/` : null;
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return html`<div role="dialog" aria-modal="true" aria-label="Play post" onClick=${onClose}
+    style=${{ position: 'fixed', inset: 0, background: 'rgba(10,10,20,.72)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+    <div onClick=${(e) => e.stopPropagation()} style=${{ background: 'var(--surface, #fff)', borderRadius: '14px', overflow: 'hidden', width: 'min(420px, 100%)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.4)' }}>
+      <div style=${{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px 8px 14px', borderBottom: '1px solid var(--border-2, #eee)' }}>
+        <span style=${{ flex: 1, fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>${(post.title || '').split('\n')[0]}</span>
+        <a href=${post.post_url} target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style=${{ whiteSpace: 'nowrap' }}>Open in Instagram ↗</a>
+        <button type="button" class="btn btn-ghost btn-sm" onClick=${onClose} aria-label="Close" style=${{ fontSize: '16px', lineHeight: 1 }}>✕</button>
+      </div>
+      ${src ? html`<iframe src=${src} title="Instagram post" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen
+          style=${{ border: 0, width: '100%', height: 'min(760px, calc(92vh - 50px))', background: '#fff' }}></iframe>`
+        : html`<p class="muted" style=${{ padding: '20px', fontSize: '13px' }}>This post has no Instagram link to play.</p>`}
+    </div>
+  </div>`;
+}
+
+// "Who saw your content": reached-audience demographics (not just followers) for a period.
+// Instagram has no per-post demographics; when one post dominates the period's views,
+// this is effectively that post's audience, and the panel says so.
+function IgViewers({ aud, monthly, posts }) {
+  const v = aud && aud.viewers;
+  const frames = v ? ['this_month', 'this_week'].filter((k) => v[k]) : [];
+  const [tf, setTf] = useState(frames[0] || 'this_month');
+  let regionName = (c) => c;
+  try { const dn = new Intl.DisplayNames(['en'], { type: 'region' }); regionName = (c) => (/^[A-Z]{2}$/.test(c) ? dn.of(c) || c : c); } catch (_) {}
+  const raw = v && (v[tf] || v[frames[0]]);
+  const cur = raw && {
+    ...raw,
+    gender: (raw.gender || []).map((g) => (g.label === 'Other' ? { ...g, label: 'Not stated' } : g)),
+    countries: (raw.countries || []).map((c) => ({ ...c, name: regionName(c.name) })),
+  };
+  const frameName = { this_month: 'This month', this_week: 'This week' };
+  const now = new Date();
+  const mKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const monthViews = Number(monthly[mKey] && monthly[mKey].views) || 0;
+  const top = (posts || []).filter((c) => c.published_at && c.published_at.slice(0, 7) === mKey)
+    .sort((a, b) => (Number(b.metrics && b.metrics.views) || 0) - (Number(a.metrics && a.metrics.views) || 0))[0];
+  const topShare = top && monthViews ? Math.min(100, Math.round(((Number(top.metrics.views) || 0) / monthViews) * 100)) : 0;
+  const clip = (t) => { t = (t || '').trim().split('\n')[0]; return t.length > 40 ? t.slice(0, 40) + '…' : t; };
+  const rows = (list, color, key = 'name') => (list || []).filter((r) => r.pct > 0).slice(0, 6).map((r) => html`<div style=${{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '12.5px', padding: '3px 0' }}>
+    <span style=${{ width: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title=${r[key]}>${r[key]}</span>${pctBar(Math.round(r.pct), color)}<strong style=${{ width: '46px', textAlign: 'right' }}>${r.pct}%</strong></div>`);
+  const box = (title, body) => html`<div class="eng-notes" style=${{ margin: 0 }}><div class="eng-notes-title">${title}</div>${body}</div>`;
+  return html`<div class="card card-pad section-gap">
+    <div style=${{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+      <div class="card-title" style=${{ margin: 0 }}>🌍 Who saw your content <span class="muted" style=${{ fontWeight: 400 }}>(everyone reached, not just followers)</span></div>
+      ${frames.length > 1 ? html`<div style=${{ display: 'flex', gap: '6px' }}>${frames.map((k) => html`<button class=${'btn btn-sm ' + (k === tf ? 'btn-primary' : 'btn-ghost')} onClick=${() => setTf(k)}>${frameName[k]}</button>`)}</div>` : ''}
+    </div>
+    ${cur ? html`
+      ${tf === 'this_month' && topShare >= 50 ? html`<p style=${{ fontSize: '12.5px', margin: '10px 0 0', padding: '8px 10px', background: 'var(--border-2)', borderRadius: '8px' }}>
+        💡 <strong>“${clip(top.title)}”</strong> made <strong>${topShare >= 95 ? 'almost all' : topShare + '%'}</strong> of this month's views, so this is mostly <em>that post's</em> audience.</p>` : ''}
+      <div style=${{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginTop: '12px' }}>
+        ${box('Gender', rows(cur.gender, '#ec4899', 'label'))}
+        ${box('Age', rows(cur.age, '#6366f1', 'label'))}
+        ${box('Top countries', rows(cur.countries, '#22c55e'))}
+        ${cur.cities && cur.cities.length ? box('Top cities', rows(cur.cities, '#f59e0b')) : ''}
+      </div>
+      <p class="muted" style=${{ fontSize: '11px', margin: '8px 0 0' }}>From Instagram (accounts reached, ${frameName[tf] ? frameName[tf].toLowerCase() : ''}). Instagram doesn't give demographics for a single post.</p>`
+      : html`<p class="muted" style=${{ fontSize: '12.5px', margin: '8px 0 0' }}>Appears after the next sync.</p>`}
+  </div>`;
+}
+
+// "▲12% vs prior week" — nothing when Studio has no earlier period (a new account shows "--").
+function changeChip(pct, label) {
+  if (pct == null) return '';
+  return html`<span style=${{ color: pct >= 0 ? '#0f7a4d' : '#b4232a', fontSize: '11.5px' }}>${pct >= 0 ? '▲' : '▼'}${Math.abs(pct)}% ${label}</span>`;
 }
 
 // Follower section: real daily growth pace, per-video follows (from Studio), and
@@ -219,8 +431,7 @@ function pctBar(pct, color, track = 'var(--border-2)') {
 // Monthly performance card. Each month shows a ▲ if it beat the month before, ▼ if
 // fewer — plus the exact change — so momentum is readable at a glance.
 function FollowerMonthlyCard() {
-  let mf = null;
-  try { mf = JSON.parse(localStorage.getItem('serigama.monthlyfollowers') || 'null'); } catch (e) { mf = null; }
+  const mf = readKV('serigama.monthlyfollowers', null);
   if (!mf || !Object.keys(mf).length) return '';
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const months = Object.entries(mf).sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([key, net]) => ({ key, net: Number(net) }));
@@ -269,8 +480,7 @@ function FollowerMonthlyCard() {
 
 function FollowerCard({ fg, gains, posts, onClose }) {
   const [playing, setPlaying] = useState(null);
-  let aud = null;
-  try { aud = JSON.parse(localStorage.getItem('serigama.audience') || 'null'); } catch (e) { aud = null; }
+  const aud = readKV('serigama.audience', null);
   const current = (aud && aud.totalFollowers) || (fg && fg.current) || 0;
 
   const head = html`<div class="chart-head">
@@ -294,7 +504,8 @@ function FollowerCard({ fg, gains, posts, onClose }) {
   const clip = (t) => { t = (t || '(untitled)').trim(); return t.length > 44 ? t.slice(0, 44) + '…' : t; };
 
   // Daily growth pace — Studio's net figures are accurate (the Display-API count lags).
-  const perDay = aud && aud.net28d ? Math.round((aud.net28d / 28) * 10) / 10 : null;
+  // `net28dDays`: for an account younger than 28 days, the days those followers came in.
+  const perDay = aud && aud.net28d ? Math.round((aud.net28d / (aud.net28dDays || 28)) * 10) / 10 : null;
   const step = current < 10000 ? 1000 : 5000;
   const milestone = (Math.floor(current / step) + 1) * step;
   const daysTo = perDay && perDay > 0 ? Math.ceil((milestone - current) / perDay) : null;
@@ -310,27 +521,56 @@ function FollowerCard({ fg, gains, posts, onClose }) {
   if (!perPost.length && gains && gains.size) {
     perPost = (posts || []).map((c) => ({ c, g: gains.get(c.id), studio: false })).filter((r) => r.g != null && r.g > 0);
   }
+  // Studio's per-video "new followers" are gross follows: people who unfollow later
+  // stay counted on the video, so the videos can add up to more than the total.
+  const viaVideos = perPost.reduce((n, r) => n + r.g, 0);
+  const unfollowed = viaVideos - current;
   perPost = perPost.sort((a, b) => b.g - a.g).slice(0, 6);
   const fromStudio = perPost.length && perPost[0].studio;
 
   return html`<div class="card card-pad section-gap">${head}
 
     ${aud ? html`<div style=${{ marginTop: '10px', padding: '12px 14px', background: '#f4fbf7', border: '1px solid #cdeddd', borderRadius: 'var(--radius-sm)' }}>
-      <div style=${{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
-        <span style=${{ fontSize: '20px', fontWeight: 700, color: '#0f7a4d' }}>+${perDay}/day</span>
-        <span class="muted" style=${{ fontSize: '12px' }}>average, based on Studio net followers</span>
-      </div>
-      <div style=${{ display: 'flex', gap: '20px', marginTop: '8px', flexWrap: 'wrap', fontSize: '13px' }}>
-        <div>Last 7 days <strong style=${{ color: '#0f7a4d' }}>+${aud.net7d}</strong> <span style=${{ color: aud.net7dChangePct >= 0 ? '#0f7a4d' : '#b4232a', fontSize: '11.5px' }}>${aud.net7dChangePct >= 0 ? '▲' : '▼'}${Math.abs(aud.net7dChangePct)}% vs prior week</span></div>
-        <div>Last 28 days <strong style=${{ color: '#0f7a4d' }}>+${aud.net28d}</strong> <span style=${{ color: aud.net28dChangePct >= 0 ? '#0f7a4d' : '#b4232a', fontSize: '11.5px' }}>${aud.net28dChangePct >= 0 ? '▲' : '▼'}${Math.abs(aud.net28dChangePct)}% vs prior 4 wks</span></div>
-      </div>
+      ${perDay != null ? html`<div style=${{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+        <span style=${{ fontSize: '20px', fontWeight: 700, color: '#0f7a4d' }}>${perDay >= 0 ? '+' : ''}${perDay}/day</span>
+        <span class="muted" style=${{ fontSize: '12px' }}>average, based on ${insightSource()} net followers</span>
+      </div>` : html`<div class="muted" style=${{ fontSize: '12.5px' }}>Daily growth pace appears once ${insightSource()} reports follower growth for this account.</div>`}
+      ${aud.net7d != null || aud.net28d != null ? html`<div style=${{ display: 'flex', gap: '20px', marginTop: '8px', flexWrap: 'wrap', fontSize: '13px' }}>
+        ${aud.net7d != null ? html`<div>Last 7 days <strong style=${{ color: '#0f7a4d' }}>${aud.net7d >= 0 ? '+' : ''}${aud.net7d}</strong> ${changeChip(aud.net7dChangePct, 'vs prior week')}</div>` : ''}
+        ${aud.net28d != null ? html`<div>Last 28 days <strong style=${{ color: '#0f7a4d' }}>${aud.net28d >= 0 ? '+' : ''}${aud.net28d}</strong> ${changeChip(aud.net28dChangePct, 'vs prior 4 wks')}</div>` : ''}
+      </div>` : ''}
+      ${aud.unfollows28d != null ? html`<div class="kpi-row" style=${{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '10px' }}>
+        ${[
+          ['#22c55e', 'Follows · 28 days', '+' + withThousands(aud.follows28d || 0), `last 7 days +${withThousands(aud.follows7d || 0)}`],
+          ['#ef4444', 'Unfollows · 28 days', '−' + withThousands(aud.unfollows28d || 0), `last 7 days −${withThousands(aud.unfollows7d || 0)}`],
+          ['#3b82f6', 'Net · 28 days', (aud.net28d >= 0 ? '+' : '') + withThousands(aud.net28d || 0), 'reported by Instagram'],
+        ].map(([color, label, val, sub]) => html`<div class="kpi" style=${{ borderTop: '3px solid ' + color, boxShadow: 'none', padding: '12px 14px', background: '#fff' }}>
+          <div class="kpi-label">${label}</div>
+          <div class="kpi-value" style=${{ fontSize: '22px', color }}>${val}</div>
+          <div class="kpi-sub">${sub}</div>
+        </div>`)}
+      </div>` : ''}
       ${daysTo != null ? html`<div style=${{ fontSize: '12.5px', marginTop: '8px' }}>🎯 At this pace you'll hit <strong>${withThousands(milestone)}</strong> in about <strong>${daysTo} days</strong> (~${etaLabel}).</div>` : ''}
-      <div class="muted" style=${{ fontSize: '11px', marginTop: '6px' }}>Captured from Studio on ${aud.capturedAt}. ${aud.net7dChangePct >= 0 && aud.net28dChangePct >= 0 ? html`Growth is <strong style=${{ color: '#0f7a4d' }}>accelerating</strong> — both windows up vs the period before.` : aud.net7dChangePct < 0 && aud.net28dChangePct < 0 ? html`Growth <strong style=${{ color: '#b4232a' }}>cooled</strong> — both windows down vs the period before.` : html`Growth is <strong>mixed</strong> vs the period before — see the two windows above.`}</div>
+      <div class="muted" style=${{ fontSize: '11px', marginTop: '6px' }}>${isInstagram() ? 'Updated from Instagram' : 'Captured from Studio'} on ${aud.capturedAt}. ${isInstagram() ? '' : aud.net7dChangePct == null || aud.net28dChangePct == null ? html`No earlier period to compare yet (new account).` : aud.net7dChangePct >= 0 && aud.net28dChangePct >= 0 ? html`Growth is <strong style=${{ color: '#0f7a4d' }}>accelerating</strong> — both windows up vs the period before.` : aud.net7dChangePct < 0 && aud.net28dChangePct < 0 ? html`Growth <strong style=${{ color: '#b4232a' }}>cooled</strong> — both windows down vs the period before.` : html`Growth is <strong>mixed</strong> vs the period before — see the two windows above.`}</div>
     </div>` : (fg && fg.days >= 2 ? html`<div style=${{ marginTop: '10px' }}><${TrendChart} data=${fg.points} grain="daily" /></div>` : html`<p class="muted" style=${{ fontSize: '12.5px', marginTop: '8px' }}>Ask me to pull your follower audience from Studio to see daily growth pace and demographics.</p>`)}
 
     ${perPost.length ? html`<div style=${{ marginTop: '16px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
-      <div class="card-title" style=${{ fontSize: '13px', marginBottom: '2px' }}>Followers gained per video ${fromStudio ? html`<span class="muted" style=${{ fontWeight: 400 }}>(from Studio)</span>` : html`<span class="muted" style=${{ fontWeight: 400 }}>(estimated)</span>`}</div>
-      <p class="muted" style=${{ fontSize: '11.5px', marginTop: 0, marginBottom: '8px' }}>Which videos actually convert viewers into followers — the real growth engine.</p>
+      <div class="card-title" style=${{ fontSize: '13px', marginBottom: '2px' }}>New follows per video ${fromStudio ? html`<span class="muted" style=${{ fontWeight: 400 }}>(from ${insightSource()})</span>` : html`<span class="muted" style=${{ fontWeight: 400 }}>(estimated)</span>`}</div>
+      <p class="muted" style=${{ fontSize: '11.5px', marginTop: 0, marginBottom: '8px' }}>Which videos actually convert viewers into followers — the real growth engine. ${fromStudio ? 'Counts everyone who followed from the video, including people who unfollowed later.' : ''}</p>
+      ${fromStudio ? html`<div class="kpi-row" style=${{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', margin: '4px 0 6px' }}>
+          ${[
+            ['#22c55e', 'New follows', '+' + withThousands(viaVideos), 'from these videos'],
+            ['#ef4444', 'Unfollowed', unfollowed > 0 ? '−' + withThousands(unfollowed) : '—', unfollowed > 0 ? 'at least — follows minus followers now' : "can't be worked out here"],
+            ['#3b82f6', 'Followers now', withThousands(current), `from ${insightSource()}`],
+          ].map(([color, label, val, sub]) => html`<div class="kpi" style=${{ borderTop: '3px solid ' + color, boxShadow: 'none', padding: '12px 14px' }}>
+            <div class="kpi-label">${label}</div>
+            <div class="kpi-value" style=${{ fontSize: '22px', color: val === '—' ? 'var(--muted-2)' : color }}>${val}</div>
+            <div class="kpi-sub">${sub}</div>
+          </div>`)}
+        </div>
+        <p class="muted" style=${{ fontSize: '11px', margin: '0 0 8px' }}>${unfollowed > 0
+          ? "TikTok doesn't report unfollows directly, so this is worked out from the numbers above. It's a minimum: anyone who followed from your profile or search and then left isn't counted."
+          : "TikTok doesn't report unfollows. It can only be worked out when these videos brought more follows than you have followers now — here most followers came from older videos or before Studio figures were captured, so the gap is hidden."}</p>` : ''}
       ${perPost.map((r) => html`<div style=${{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', fontSize: '12.5px', padding: '5px 0', borderTop: '1px solid var(--border-2)' }}>
         <span style=${{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', minWidth: 0 }}>
           ${tiktokId(r.c) ? html`<button class="play-btn" title="Play video" onClick=${() => setPlaying(r.c)}>▶</button>` : ''}
@@ -360,7 +600,7 @@ function FollowerCard({ fg, gains, posts, onClose }) {
         <span class="muted" style=${{ width: '58px', textAlign: 'right', fontSize: '11px' }}>~${count}</span>
       </div>`;
       return html`<div style=${{ marginTop: '16px', borderTop: '1px solid var(--border)', paddingTop: '14px' }}>
-        <div class="card-title" style=${{ fontSize: '13px', marginBottom: '12px' }}>Who follows you <span class="muted" style=${{ fontWeight: 400 }}>(audience — from Studio)</span></div>
+        <div class="card-title" style=${{ fontSize: '13px', marginBottom: '12px' }}>Who follows you <span class="muted" style=${{ fontWeight: 400 }}>(audience — from ${insightSource()})</span></div>
         <div style=${{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '12px' }}>
           ${panel('👥', 'Gender', html`
             <div style=${{ display: 'flex', height: '18px', borderRadius: '5px', overflow: 'hidden', marginBottom: '10px' }}>
@@ -581,8 +821,7 @@ function monthSpan(firstKey, lastKey) {
 }
 
 function MonthlyReport({ contents }) {
-  let stored = null;
-  try { stored = JSON.parse(localStorage.getItem('serigama.monthly') || 'null'); } catch (e) { stored = null; }
+  const stored = readKV('serigama.monthly', null);
   if (!stored || !stored.months) return '';
   const keys = Object.keys(stored.months).sort();
   if (!keys.length) return '';
@@ -616,7 +855,7 @@ function MonthlyReport({ contents }) {
       <table class="atable">
         <thead><tr>
           <th>Month</th>
-          <th title="Views that happened during the month — matches TikTok Studio">📺 Views in the month<br/><span style=${{ fontWeight: 400, color: 'var(--muted)' }}>(Studio)</span></th>
+          <th title="Views that happened during the month — matches TikTok Studio">📺 Views in the month<br/><span style=${{ fontWeight: 400, color: 'var(--muted)' }}>(${insightSource()})</span></th>
           <th title="All-time views of the videos published that month">🎬 From that month's posts<br/><span style=${{ fontWeight: 400, color: 'var(--muted)' }}>(all-time)</span></th>
           <th>Posts</th>
           <th title="The best video posted that month — how big one video can pop">🏔️ Ceiling<br/><span style=${{ fontWeight: 400, color: 'var(--muted)' }}>(best video)</span></th>
@@ -833,10 +1072,9 @@ function KpiDetail({ kind, a, rangeMode, history, onClose }) {
       const likePct = Math.round((sb.likes / engTot) * 100);
       const commentPct = Math.round((sb.comments / engTot) * 100);
       const sharePct = Math.max(0, 100 - likePct - commentPct);
-      const tv = sb.views || 1;
-      const shareRate = Math.round((sb.shares / tv) * 1000) / 10;
-      const commentRate = Math.round((sb.comments / tv) * 10000) / 100;
-      const likeRate = Math.round((sb.likes / tv) * 1000) / 10;
+      // Saves come from the Studio capture per video; they aren't part of the engagement rate.
+      const withSaves = rows.filter((c) => Number(c.saves) > 0);
+      const savesTot = rows.reduce((n, c) => n + (Number(c.saves) || 0), 0);
       const erVerdict = a.avgER >= 6 ? '6%+ is genuinely strong for TikTok' : a.avgER >= 3 ? "right in TikTok's typical 3–6% range" : 'below the ~3–6% norm; a clearer call-to-action could lift it';
       const ex = engagementExtras(rows);
       const eclip = (t) => { t = (t || '(untitled)').trim(); return t.length > 38 ? t.slice(0, 38) + '…' : t; };
@@ -863,19 +1101,24 @@ function KpiDetail({ kind, a, rangeMode, history, onClose }) {
         </div>
         <div class="eng-notes">
           <div class="eng-notes-title">Engagement mix</div>
-          <div style=${{ display: 'flex', height: '24px', borderRadius: '6px', overflow: 'hidden', marginBottom: '8px' }}>
+          <div class="kpi-row" style=${{ margin: '6px 0 10px' }}>
+            ${[
+              ['#ec4899', '❤️ Likes', sb.likes, likePct + '% of engagement'],
+              ['#3b82f6', '💬 Comments', sb.comments, commentPct + '% of engagement'],
+              ['#22c55e', '🔁 Shares', sb.shares, sharePct + '% of engagement'],
+              ['#f59e0b', '🔖 Saves', savesTot, withSaves.length ? `from ${insightSource()} · not in eng. rate` : `not captured from ${insightSource()} yet`],
+            ].map(([color, label, val, sub]) => html`<div class="kpi" style=${{ borderTop: '3px solid ' + color, boxShadow: 'none' }}>
+              <div class="kpi-label">${label}</div>
+              <div class="kpi-value">${withSaves.length || label !== '🔖 Saves' ? compact(val) : '—'}</div>
+              <div class="kpi-sub">${sub}</div>
+            </div>`)}
+          </div>
+          <div style=${{ display: 'flex', height: '14px', borderRadius: '6px', overflow: 'hidden', marginBottom: '8px' }}>
             <div style=${{ width: likePct + '%', background: '#ec4899' }} title="Likes"></div>
             <div style=${{ width: commentPct + '%', background: '#3b82f6' }} title="Comments"></div>
             <div style=${{ width: sharePct + '%', background: '#22c55e' }} title="Shares"></div>
           </div>
-          <div class="note">❤️ Likes <strong>${compact(sb.likes)}</strong> · 💬 Comments <strong>${compact(sb.comments)}</strong> · 🔁 Shares <strong>${compact(sb.shares)}</strong>.</div>
           <div class="note" style=${{ color: 'var(--muted)' }}>Shares spread you to new people (reach), comments build community, likes are passive approval — a healthy share slice is the best growth sign.</div>
-        </div>
-        <div class="eng-notes">
-          <div class="eng-notes-title">Key rates (per view)</div>
-          <div class="note">🔁 <strong>Share rate ${shareRate}%</strong> — of everyone who watched, this many sent it on. Shares are TikTok's strongest reach signal.</div>
-          <div class="note">💬 <strong>Comment rate ${commentRate}%</strong> — how much conversation each video sparks.</div>
-          <div class="note">❤️ <strong>Like rate ${likeRate}%</strong> · 📊 <strong>Avg. engagement rate ${a.avgER}%</strong> ${erTag(a.avgER)} — ${erVerdict}.</div>
         </div>
         <div style=${{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           <div class="eng-notes" style=${{ flex: 1, minWidth: '240px' }}>
@@ -888,7 +1131,7 @@ function KpiDetail({ kind, a, rangeMode, history, onClose }) {
           </div>
         </div>
         ${ex.topSaved.length ? html`<div class="eng-notes">
-          <div class="eng-notes-title">🔖 Most saved <span class="muted" style=${{ fontWeight: 400 }}>(highest-intent — from Studio)</span></div>
+          <div class="eng-notes-title">🔖 Most saved <span class="muted" style=${{ fontWeight: 400 }}>(highest-intent — from ${insightSource()})</span></div>
           ${ex.topSaved.map((c) => miniRow(c, compact(Number(c.saves) || 0) + ' saves'))}
         </div>` : ''}
         <div class="eng-notes">

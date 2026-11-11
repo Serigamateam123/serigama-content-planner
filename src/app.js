@@ -1,5 +1,5 @@
 import { render } from 'preact';
-import { useState, useEffect, useCallback } from 'preact/hooks';
+import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import { html } from './lib/html.js';
 import { store, isCloud, config } from './lib/store.js';
 import { Sidebar } from './components/Sidebar.js';
@@ -11,7 +11,9 @@ import { AnalyticsDashboard } from './features/AnalyticsDashboard.js';
 import { Targets } from './features/Targets.js';
 import { ContentModal } from './features/ContentModal.js';
 import { Login } from './features/Login.js';
-import { readKV, updateKVEntry } from './lib/kv.js';
+import { readKV, writeKV, updateKVEntry } from './lib/kv.js';
+import { findPlanMatches, applyPlanMatches } from './lib/reconcile.js';
+import { initAccounts, setActiveAccount, accountOf, kvKey, kvBase, loadedAccounts, socialAccounts, accountColor } from './lib/account.js';
 
 const ROUTES = ['dashboard', 'calendar', 'fundamental', 'overview', 'targets', 'analytics'];
 
@@ -19,12 +21,15 @@ const ROUTES = ['dashboard', 'calendar', 'fundamental', 'overview', 'targets', '
 // content id -> fields) rather than as columns, so they work without a database
 // migration. Merged onto each content on load; split back out on save.
 const META_KEY = 'serigama.contentmeta';
-const META_FIELDS = ['funnel_stage', 'pillar', 'product', 'assignee', 'hook', 'cta'];
+const META_FIELDS = ['funnel_stage', 'pillar', 'product', 'assignee', 'hook', 'cta', 'inspo1', 'inspo2'];
 
 // Helper so a capture can be written straight to the cloud (and mirrored locally).
-// Used when refreshing the manually-pulled Studio figures.
+// Used when refreshing the manually-pulled Studio figures. `set` takes the exact
+// key: use key(base, accountId) for a per-account figure of a non-primary account.
 if (typeof window !== 'undefined') {
   window.serigamaCloud = {
+    accounts: () => loadedAccounts().map((a) => ({ id: a.id, name: a.display_name || a.handle })),
+    key: (base, accountId) => kvKey(base, accountId),
     get: () => store.getKV(),
     set: async (k, v) => { localStorage.setItem(k, v); try { await store.setKV(k, v); return 'ok'; } catch (e) { return 'err: ' + (e.message || e.code || e); } },
     saveStudio: async (rows) => {
@@ -52,6 +57,8 @@ const KV_KEYS = [
   'serigama.goals',
   'serigama.reports',
   'serigama.targets',
+  'serigama.reels', // Instagram reel extras (written by instagram-sync), keyed by post id
+  'serigama.reelsweb', // Instagram per-reel follows / follower split read from instagram.com insights (Thursday capture)
 ];
 
 // Supabase (app_kv) is the SOURCE OF TRUTH for these manually-captured figures.
@@ -61,14 +68,17 @@ const KV_KEYS = [
 // once from whichever browser first captured it. Writes (a capture, or the goal)
 // go to the cloud via setKV, so the cloud always holds the freshest value.
 // Runs before the analytics views read localStorage, so values are in place.
+// Every account's copy of a key (`<key>@<account id>`, see lib/account.js) is
+// mirrored down too; only the primary account's original keys are ever seeded up.
 async function syncKV() {
   if (!isCloud || !store.getKV) return;
   let remote = {};
   try { remote = await store.getKV(); } catch (e) { return; }
+  for (const [k, v] of Object.entries(remote)) {
+    if (KV_KEYS.includes(kvBase(k)) && localStorage.getItem(k) !== v) localStorage.setItem(k, v);
+  }
   for (const k of KV_KEYS) {
-    if (remote[k] != null) {
-      if (localStorage.getItem(k) !== remote[k]) localStorage.setItem(k, remote[k]);
-    } else {
+    if (remote[k] == null) {
       const local = localStorage.getItem(k);
       if (local != null) { try { await store.setKV(k, local); } catch (e) { /* keep going */ } }
     }
@@ -83,7 +93,14 @@ function App() {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState(null);
   const [route, setRoute] = useState(routeFromHash());
-  const [data, setData] = useState({ contents: [], accounts: [], accountStats: [], metricsHistory: [], studioMetrics: [] });
+  const [all, setData] = useState({ contents: [], accounts: [], accountStats: [], metricsHistory: [], studioMetrics: [] });
+  // Calendar moves made in the last minute (id → new date). A data load that was
+  // already in flight when a card was dropped would otherwise put it back on screen.
+  const recentMoves = useRef(new Map());
+  const [accountId, setAccountId] = useState(null); // TikTok account shown (sidebar switcher)
+  // Content Calendar scope: 'all' = every account on one calendar, 'account' = the switcher's account.
+  const [calScope, setCalScope] = useState(() => { try { return localStorage.getItem('serigama.calScope') === 'all' ? 'all' : 'account'; } catch (e) { return 'account'; } });
+  const rememberCalScope = (s) => { setCalScope(s); try { localStorage.setItem('serigama.calScope', s); } catch (e) { /* per-browser preference only */ } };
   const [modal, setModal] = useState(null); // { content, defaultDate, prefill } | null
   const [dataVersion, setDataVersion] = useState(0); // bumps after each load so KV-backed views re-read
   const [loadingData, setLoadingData] = useState(false);
@@ -112,8 +129,10 @@ function App() {
 
   const loadData = useCallback(async () => {
     setLoadingData(true);
-    await syncKV(); // hydrate localStorage-backed figures from Supabase before reading them
-    const [contents, accounts, accountStats, metricsHistory, studioMetrics] = await Promise.all([
+    // Saved figures (app_kv → localStorage) download alongside the tables; nothing
+    // below reads them until all of it has arrived.
+    const [, contents, accounts, accountStats, metricsHistory, studioMetrics] = await Promise.all([
+      syncKV(),
       store.listContents(),
       store.listAccounts(),
       store.listAccountStats(),
@@ -133,7 +152,28 @@ function App() {
       saves: c.external_id ? Number(savesBy[String(c.external_id)]) || 0 : 0,
       newFollowers: c.external_id && newFollowersBy[String(c.external_id)] != null ? Number(newFollowersBy[String(c.external_id)]) : null,
     }));
-    setData({ contents: withStudio, accounts, accountStats, metricsHistory, studioMetrics });
+    setAccountId(initAccounts(accounts));
+    // A planned item whose video has now been posted (synced) is replaced by the
+    // posted video, keeping the plan's script / pillar / notes on it (lib/reconcile.js).
+    let finalContents = withStudio;
+    if (isCloud) {
+      const pairs = findPlanMatches(withStudio, accountOf);
+      if (pairs.length) {
+        try {
+          const nextMeta = await applyPlanMatches(pairs, readKV(META_KEY, {}), store);
+          await writeKV(META_KEY, nextMeta);
+          const gone = new Set(pairs.map((p) => p.plan.id));
+          const byPost = new Map(pairs.map((p) => [p.post.id, p]));
+          finalContents = withStudio.filter((c) => !gone.has(c.id)).map((c) => (byPost.has(c.id)
+            ? { ...c, ...(nextMeta[c.id] || {}), caption: c.caption || ['Plan: ' + byPost.get(c.id).plan.title, byPost.get(c.id).plan.caption].filter(Boolean).join('\n\n') }
+            : c));
+          console.info(`[planner] ${pairs.length} planned item(s) replaced by their posted video`);
+        } catch (e) { console.warn('[planner] could not merge plans into posted videos', e); }
+      }
+    }
+    const moves = recentMoves.current;
+    if (moves.size) finalContents = finalContents.map((c) => (moves.has(c.id) ? { ...c, scheduled_at: moves.get(c.id) } : c));
+    setData({ contents: finalContents, accounts, accountStats, metricsHistory, studioMetrics });
     setDataVersion((v) => v + 1);
     setLoadingData(false);
   }, []);
@@ -160,10 +200,19 @@ function App() {
     await loadData();
   };
   // Calendar drag & drop: move a post to another day (or back to the backlog with null).
+  // The card moves at once (optimistic) and the new date saves in the background;
+  // only a failed save reloads, which puts the card back where it was.
   const rescheduleContent = async (id, scheduledAt) => {
-    try { await store.updateContent(id, { scheduled_at: scheduledAt }); }
-    catch (e) { alert('Could not move that post: ' + (e.message || e)); }
-    await loadData();
+    recentMoves.current.set(id, scheduledAt);
+    setData((d) => ({ ...d, contents: d.contents.map((c) => (c.id === id ? { ...c, scheduled_at: scheduledAt } : c)) }));
+    try {
+      await store.updateContent(id, { scheduled_at: scheduledAt });
+      setTimeout(() => { if (recentMoves.current.get(id) === scheduledAt) recentMoves.current.delete(id); }, 60000);
+    } catch (e) {
+      recentMoves.current.delete(id);
+      alert('Could not move that post: ' + (e.message || e));
+      await loadData();
+    }
   };
   const saveMetrics = async (id, m) => { await store.saveMetrics(id, m); await loadData(); };
 
@@ -175,7 +224,28 @@ function App() {
     onSignIn=${(e) => store.signIn(e)}
     onPasswordSignIn=${(e, p) => store.signInWithPassword(e, p)} />`;
 
-  const { contents, accounts, accountStats, metricsHistory } = data;
+  // Every screen shows the account picked in the sidebar: its posts, their metric
+  // history and its follower snapshots (per-account app_kv figures resolve in kv.js).
+  const { accounts } = all;
+  const contents = all.contents.filter((c) => accountOf(c) === accountId);
+  const ids = new Set(contents.map((c) => c.id));
+  const metricsHistory = all.metricsHistory.filter((m) => ids.has(m.content_id));
+  const accountStats = all.accountStats.filter((s) => accountOf(s) === accountId);
+  const switchAccount = (id) => { setActiveAccount(id); setAccountId(id); setDataVersion((v) => v + 1); rememberCalScope('account'); };
+  // Sidebar Content Calendar sub-items: 'all', or an account id.
+  const pickCalendar = (scope) => {
+    if (scope === 'all') rememberCalScope('all');
+    else if (scope !== accountId) switchAccount(scope);
+    else rememberCalScope('account');
+    navigate('calendar');
+  };
+  const socialIds = new Set(socialAccounts(accounts).map((a) => a.id));
+  const allCalendar = calScope === 'all' && socialIds.size > 1;
+  const calendarContents = allCalendar ? all.contents.filter((c) => socialIds.has(accountOf(c))) : contents;
+  const accountTag = (c) => {
+    const a = accounts.find((x) => x.id === accountOf(c));
+    return a ? { id: a.id, label: '@' + (a.handle || a.display_name), color: accountColor(a.id, accounts) } : null;
+  };
 
   return html`<div class="app">
     <${Sidebar}
@@ -183,18 +253,26 @@ function App() {
       onNavigate=${navigate}
       onNew=${() => openNew()}
       config=${config}
+      accounts=${accounts}
+      accountId=${accountId}
+      onSwitchAccount=${switchAccount}
+      calScope=${allCalendar ? 'all' : 'account'}
+      onCalendarScope=${pickCalendar}
       session=${session}
       isCloud=${isCloud}
       onSetPassword=${() => setPwModal(true)}
       onSignOut=${async () => { await store.signOut(); setSession(null); }}
     />
     <main class="main">
-      <div class="main-inner">
+      <div class="main-inner" key=${(route === 'calendar' && allCalendar ? 'all' : accountId) || 'none'}>
         ${route === 'dashboard'
           ? html`<${Dashboard} contents=${contents} config=${config}
               onNew=${() => openNew()} onOpen=${openEdit} onNavigate=${navigate} onRefresh=${loadData} />`
           : route === 'calendar'
-          ? html`<${Calendar} contents=${contents}
+          ? html`<${Calendar} contents=${calendarContents}
+              accounts=${allCalendar ? socialAccounts(accounts).map((a) => ({ id: a.id, label: '@' + (a.handle || a.display_name), color: accountColor(a.id, accounts) })) : null}
+              accountTag=${allCalendar ? accountTag : null}
+              scopeLabel=${allCalendar ? 'All accounts' : (() => { const a = accounts.find((x) => x.id === accountId); return a ? '@' + (a.handle || a.display_name) : ''; })()}
               onNew=${() => openNew()} onOpen=${openEdit} onNewOnDate=${(d) => openNew(d)} onReschedule=${rescheduleContent} />`
           : route === 'fundamental'
           ? html`<${Fundamental} contents=${contents} dataVersion=${dataVersion} onPlan=${(prefill) => openNew(null, prefill)} />`

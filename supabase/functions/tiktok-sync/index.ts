@@ -53,23 +53,32 @@ async function refreshIfNeeded(row: any) {
   return t.access_token;
 }
 
-// Snapshot today's follower/like totals (upsert keeps one row per day).
-async function snapshotStats(row: any, token: string) {
+// The `accounts` row this connection syncs into. Set by tiktok-callback (and
+// backfilled by multi_account.sql); older rows fall back to the login's first
+// TikTok account.
+async function accountIdFor(row: any) {
+  if (row.account_id) return row.account_id;
+  const { data: acct } = await sb
+    .from("accounts")
+    .select("id")
+    .eq("user_id", row.user_id)
+    .eq("platform", "tiktok")
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+  return acct?.id ?? null;
+}
+
+// Snapshot today's follower/like totals (upsert keeps one row per account per day).
+async function snapshotStats(row: any, token: string, accountId: string | null) {
   try {
     const res = await fetch(USER_INFO_URL, { headers: { Authorization: `Bearer ${token}` } });
     const json = await res.json();
     const u = json?.data?.user;
     if (!u) return null;
-    const { data: acct } = await sb
-      .from("accounts")
-      .select("id")
-      .eq("user_id", row.user_id)
-      .eq("platform", "tiktok")
-      .limit(1)
-      .maybeSingle();
     await sb.from("account_stats").upsert({
       user_id: row.user_id,
-      account_id: acct?.id ?? null,
+      account_id: accountId,
       platform: "tiktok",
       follower_count: u.follower_count ?? null,
       following_count: u.following_count ?? null,
@@ -77,7 +86,7 @@ async function snapshotStats(row: any, token: string) {
       video_count: u.video_count ?? null,
       captured_at: new Date().toISOString(),
       day: new Date().toISOString().slice(0, 10),
-    }, { onConflict: "user_id,platform,day" });
+    }, { onConflict: "user_id,platform,account_id,day" });
     return u.follower_count ?? null;
   } catch (_) {
     return null; // never let a stats hiccup break the video sync
@@ -86,7 +95,8 @@ async function snapshotStats(row: any, token: string) {
 
 async function syncOne(row: any) {
   const token = await refreshIfNeeded(row);
-  const followers = await snapshotStats(row, token);
+  const accountId = await accountIdFor(row);
+  const followers = await snapshotStats(row, token, accountId);
   let cursor: number | undefined;
   let pulled = 0;
 
@@ -97,38 +107,43 @@ async function syncOne(row: any) {
       body: JSON.stringify(cursor ? { max_count: 20, cursor } : { max_count: 20 }),
     });
     const json = await res.json();
-    const videos = json?.data?.videos ?? [];
-    for (const v of videos) {
-      const likes = v.like_count ?? 0, comments = v.comment_count ?? 0, shares = v.share_count ?? 0;
-      const views = v.view_count ?? 0;
-      const engagement = likes + comments + shares;
-      const er = views ? Math.round((engagement / views) * 1000) / 10 : 0;
-      const publishedAt = v.create_time ? new Date(v.create_time * 1000).toISOString() : null;
-
-      // Upsert the content row (matched by external_id).
-      const { data: content } = await sb.from("contents").upsert({
-        user_id: row.user_id,
-        platform: "tiktok",
-        external_id: String(v.id),
-        title: v.title || "(untitled TikTok video)",
-        status: "published",
-        published_at: publishedAt,
-        scheduled_at: publishedAt,
-        post_url: v.share_url || "",
-        has_final_caption: true,
-      }, { onConflict: "user_id,platform,external_id" }).select("id").single();
-
-      if (content) {
-        await sb.from("content_metrics").insert({
-          content_id: content.id,
+    const videos = (json?.data?.videos ?? []).filter((v: any) => v?.id);
+    if (videos.length) {
+      // One upsert + one insert per page of 20 (not 2 calls per video), so accounts
+      // with hundreds of videos finish well inside the function's time limit.
+      const { data: saved, error: upErr } = await sb.from("contents").upsert(videos.map((v: any) => {
+        const publishedAt = v.create_time ? new Date(v.create_time * 1000).toISOString() : null;
+        return {
+          user_id: row.user_id,
+          platform: "tiktok",
+          account_id: accountId,
+          external_id: String(v.id),
+          title: v.title || "(untitled TikTok video)",
+          status: "published",
+          published_at: publishedAt,
+          scheduled_at: publishedAt,
+          post_url: v.share_url || "",
+          has_final_caption: true,
+        };
+      }), { onConflict: "user_id,platform,external_id" }).select("id, external_id");
+      if (upErr) throw upErr;
+      const idOf = new Map((saved ?? []).map((c: any) => [String(c.external_id), c.id]));
+      const now = new Date().toISOString();
+      const metrics = videos.filter((v: any) => idOf.has(String(v.id))).map((v: any) => {
+        const likes = v.like_count ?? 0, comments = v.comment_count ?? 0, shares = v.share_count ?? 0;
+        const views = v.view_count ?? 0;
+        const engagement = likes + comments + shares;
+        return {
+          content_id: idOf.get(String(v.id)),
           user_id: row.user_id,
           views, likes, comments, shares,
-          engagement, engagement_rate: er,
+          engagement, engagement_rate: views ? Math.round((engagement / views) * 1000) / 10 : 0,
           source: "tiktok",
-          fetched_at: new Date().toISOString(),
-        });
-      }
-      pulled++;
+          fetched_at: now,
+        };
+      });
+      if (metrics.length) await sb.from("content_metrics").insert(metrics);
+      pulled += videos.length;
     }
     cursor = json?.data?.has_more ? json.data.cursor : undefined;
   } while (cursor);
@@ -148,13 +163,14 @@ Deno.serve(async (req) => {
     const { data: rows, error } = await q;
     if (error) throw error;
 
-    const results = [];
-    for (const row of rows ?? []) {
+    // Accounts sync side by side, so one large account can't use up the time
+    // limit before the others are reached.
+    const results = await Promise.all((rows ?? []).map(async (row: any) => {
       try {
         const { pulled, followers } = await syncOne(row);
-        results.push({ user_id: row.user_id, pulled, followers });
-      } catch (e) { results.push({ user_id: row.user_id, error: String(e) }); }
-    }
+        return { user_id: row.user_id, account: row.display_name, pulled, followers };
+      } catch (e) { return { user_id: row.user_id, account: row.display_name, error: String(e) }; }
+    }));
     return new Response(JSON.stringify({ ok: true, results }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
