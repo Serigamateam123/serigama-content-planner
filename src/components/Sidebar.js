@@ -22,7 +22,7 @@ const NAV = [
 // role: 'owner' | 'full' | 'calendar' (supabase/team.sql). Everyone sees the whole
 // menu; pages their role can't open (`locked`) show a lock and open a "no access"
 // notice instead. Only the owner can connect accounts.
-export function Sidebar({ route, role = 'owner', locked = [], onNavigate, onNew, config, accounts, accountId, onSwitchAccount, calScope, onCalendarScope, session, isCloud, onSetPassword, onSignOut }) {
+export function Sidebar({ open = false, route, role = 'owner', locked = [], onNavigate, onNew, config, accounts, accountId, onSwitchAccount, calScope, onCalendarScope, session, isCloud, onSetPassword, onSignOut }) {
   const nav = NAV;
   const isLocked = (id) => locked.includes(id);
   const canConnect = isCloud && role === 'owner';
@@ -56,7 +56,7 @@ export function Sidebar({ route, role = 'owner', locked = [], onNavigate, onNew,
           </button>`)}
       </div>`
     : null;
-  return html`<aside class="sidebar">
+  return html`<aside class=${'sidebar' + (open ? ' open' : '')}>
     <div class="brand">
       <div class="brand-name">${config.brandName || 'Serigama'}</div>
       <div class="brand-sub">Content Planner & Reporting</div>

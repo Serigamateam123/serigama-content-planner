@@ -112,6 +112,7 @@ function App() {
   const [pwModal, setPwModal] = useState(false); // "set password" dialog
   // { ownerId, role: 'owner' | 'full' | 'calendar', email } — whose plan this login sees.
   const [team, setTeam] = useState(null);
+  const [navOpen, setNavOpen] = useState(false); // phone: slide-out menu
 
   // --- routing via hash ---
   useEffect(() => {
@@ -290,25 +291,40 @@ function App() {
     return a ? { id: a.id, label: '@' + (a.handle || a.display_name), color: accountColor(a.id, accounts) } : null;
   };
 
+  // Phone: the sidebar is a slide-out menu; picking anything in it closes it.
+  const closeNav = (fn) => (...args) => { setNavOpen(false); return fn && fn(...args); };
+  const curAccount = accounts.find((x) => x.id === accountId);
+  const mobileTitle = page === 'calendar' && allCalendar ? 'All accounts' : (curAccount ? '@' + (curAccount.handle || curAccount.display_name) : '');
+
   return html`<div class="app">
     <${Sidebar}
+      open=${navOpen}
       route=${page}
       role=${role}
       locked=${locked}
-      onNavigate=${navigate}
-      onNew=${() => openNew()}
+      onNavigate=${closeNav(navigate)}
+      onNew=${closeNav(() => openNew())}
       config=${config}
       accounts=${accounts}
       accountId=${accountId}
-      onSwitchAccount=${switchAccount}
+      onSwitchAccount=${closeNav(switchAccount)}
       calScope=${allCalendar ? 'all' : 'account'}
-      onCalendarScope=${pickCalendar}
+      onCalendarScope=${closeNav(pickCalendar)}
       session=${session}
       isCloud=${isCloud}
-      onSetPassword=${() => setPwModal(true)}
-      onSignOut=${async () => { await store.signOut(); setSession(null); }}
+      onSetPassword=${closeNav(() => setPwModal(true))}
+      onSignOut=${async () => { setNavOpen(false); await store.signOut(); setSession(null); }}
     />
+    ${navOpen ? html`<div class="nav-backdrop" onClick=${() => setNavOpen(false)}></div>` : ''}
     <main class="main">
+      <div class="mobile-bar">
+        <button class="mb-btn" onClick=${() => setNavOpen(true)} aria-label="Open menu"><${Icon} name="menu" size=${20} /></button>
+        <div class="mb-title">
+          <div class="mb-page">${PAGE_NAMES[page] || 'Serigama'}</div>
+          ${mobileTitle ? html`<div class="mb-sub">${mobileTitle}</div>` : ''}
+        </div>
+        <button class="mb-btn mb-new" onClick=${() => openNew()} aria-label="New content"><${Icon} name="plus" size=${20} /></button>
+      </div>
       <div class="main-inner" key=${(page === 'calendar' && allCalendar ? 'all' : accountId) || 'none'}>
         ${role !== realRole ? html`<div class="toast" style=${{ margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: '#eef2ff', color: '#3730a3', borderColor: '#c7d2fe' }}>
           <strong>Preview:</strong> this is what a <strong>${role === 'calendar' ? 'Calendar only' : 'Full access'}</strong> team member sees.

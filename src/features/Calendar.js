@@ -1,6 +1,6 @@
 import { html } from '../lib/html.js';
 import { useRemembered } from '../lib/remember.js';
-import { useState } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import { Icon, Platform, Badge } from '../components/ui.js';
 import { PLATFORMS, STATUSES, FUNNELS } from '../lib/constants.js';
 import { monthMatrix, monthYear, isSameDay, isSameMonth, dayKey, time, addDays, startOfWeek, parse } from '../lib/date.js';
@@ -20,6 +20,16 @@ export function Calendar({ contents, accounts = null, accountTag = null, scopeLa
   const [filters, setFilters] = useRemembered('calendar.filters', { platform: 'all', status: 'active', funnel: 'all' });
   const [dragId, setDragId] = useState(null);
   const [overKey, setOverKey] = useState(null); // day (or 'backlog') being dragged over
+  // Phone agenda: open at today rather than the 1st of the month.
+  useEffect(() => {
+    if (!window.matchMedia || !window.matchMedia('(max-width: 760px)').matches) return;
+    const t = setTimeout(() => {
+      const el = document.querySelector('.cal-cell.today:not(.other)');
+      const main = document.querySelector('.main');
+      if (el && main) main.scrollTo({ top: el.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop - 72, behavior: 'smooth' });
+    }, 60);
+    return () => clearTimeout(t);
+  }, [String(cursor), view]);
   // Card edge colour = the post's funnel stage (grey when untagged).
   const funnelColor = (id) => (FUNNELS.find((f) => f.id === id) || {}).accent || 'var(--muted-2)';
   const setF = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
@@ -166,21 +176,31 @@ export function Calendar({ contents, accounts = null, accountTag = null, scopeLa
         </div>`
       : null}
 
+    ${(() => {
+      // Phone agenda: a month with nothing scheduled would otherwise look blank.
+      const inView = weeks.flat().filter((d) => view !== 'month' || isSameMonth(d, cursor));
+      return inView.some((d) => (byDay.get(dayKey(d)) || []).length) ? '' : html`<p class="cal-agenda-empty muted">Nothing scheduled ${view === 'month' ? 'this month' : 'this week'} yet.</p>`;
+    })()}
     <div class=${'cal section-gap' + (view === 'week' ? ' week-view' : '')}>
       <div class="cal-dow">${DOW.map((d) => html`<div>${d}</div>`)}</div>
       <div class="cal-grid">
         ${weeks.flat().map((day) => {
           const k = dayKey(day);
           const items = byDay.get(k) || [];
+          const today = isSameDay(day, new Date());
           const cls =
             'cal-cell' +
             (view === 'month' && !isSameMonth(day, cursor) ? ' other' : '') +
-            (isSameDay(day, new Date()) ? ' today' : '') +
+            (today ? ' today' : '') +
+            (items.length ? ' has-items' : '') +
             (overKey === k ? ' drop-over' : '');
+          // data-label: the full date, shown instead of the bare number in the phone agenda.
+          const label = day.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + (today ? ' · Today' : '');
           return html`<div class=${cls} onClick=${() => onNewOnDate(day)} ...${dropProps(k, moveToDay(day))}>
-            <div class="cal-daynum">${day.getDate()}</div>
+            <div class="cal-daynum" data-label=${label}>${day.getDate()}</div>
             <button class="cal-add" onClick=${(e) => { e.stopPropagation(); onNewOnDate(day); }} aria-label="Add">+</button>
             ${items.map(eventEl)}
+            ${items.length ? '' : html`<div class="cal-empty">Nothing planned — tap + to add</div>`}
           </div>`;
         })}
       </div>

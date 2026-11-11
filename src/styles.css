@@ -506,3 +506,108 @@ button { font-family: inherit; }
 .tgt-week-l { font-weight: 600; display: flex; flex-direction: column; }
 .tgt-week-l .muted { font-weight: 400; font-size: 11.5px; }
 @media (max-width: 720px) { .tgt-week { grid-template-columns: 1fr; } }
+
+/* --- Phone layout (≤ 760px) ------------------------------------------- */
+/* Hidden on desktop; the phone block below turns them on. */
+.mobile-bar, .nav-backdrop, .cal-empty, .cal-agenda-empty { display: none; }
+
+@media (max-width: 760px) {
+  .app { height: 100vh; height: 100dvh; }
+  .main { padding: 0 14px 90px; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+  .main-inner { padding-top: 14px; }
+
+  /* Top bar with the menu button, page name and + (new content). */
+  .mobile-bar {
+    display: flex; align-items: center; gap: 10px;
+    position: sticky; top: 0; z-index: 40; margin: 0 -14px;
+    padding: 10px 12px; padding-top: max(10px, env(safe-area-inset-top));
+    background: linear-gradient(90deg, var(--blue-1), var(--blue-2)); color: #fff;
+    box-shadow: 0 2px 10px rgba(20, 30, 70, .18);
+  }
+  .mb-btn { border: 0; background: rgba(255,255,255,.16); color: #fff; width: 40px; height: 40px; border-radius: 11px;
+    display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: 0 0 auto; }
+  .mb-btn:active { background: rgba(255,255,255,.28); }
+  .mb-new { background: var(--gold); color: #3a2c00; }
+  .mb-title { flex: 1; min-width: 0; }
+  .mb-page { font-size: 16px; font-weight: 700; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mb-sub { font-size: 11.5px; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Sidebar becomes a slide-out menu with full labels (undoes the 900px icon strip). */
+  .sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 70; width: 284px; max-width: 86vw;
+    padding: 18px 14px; padding-top: max(18px, env(safe-area-inset-top));
+    transform: translateX(-105%); transition: transform .22s ease; overflow-y: auto;
+  }
+  .sidebar.open { transform: none; box-shadow: 0 0 40px rgba(0, 0, 0, .35); }
+  .sidebar .brand-name, .sidebar .brand-sub, .sidebar .user-name, .sidebar .user-role { display: block; }
+  .sidebar .nav-item span, .sidebar .btn-new span { display: inline; }
+  .sidebar .nav-lock, .sidebar .acct-dots { display: inline-flex; }
+  .sidebar .btn-new { padding: 11px 14px; }
+  .sidebar .nav-item { justify-content: flex-start; padding: 11px 12px; }
+  .sidebar .nav-item.nav-sub { padding: 8px 12px 8px 22px; }
+  .sidebar .nav-subs { display: flex; }
+  .sidebar .nav-label { display: block; }
+  .sidebar .acct-switch .nav-label { display: block; }
+  .sidebar .acct-switch select { color: inherit; padding: 9px 10px; height: auto; }
+  .sidebar .acct-switch::after { display: none; }
+  .nav-backdrop { display: block; position: fixed; inset: 0; z-index: 65; background: rgba(15, 20, 45, .45); }
+
+  /* Page headers and toolbars wrap instead of squeezing. */
+  .page-head { flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+  .page-title { font-size: 21px; }
+  /* The top bar already names the page: keep just the page's buttons here. */
+  .page-head > div:first-child:not(:only-child) { display: none; }
+  .page-actions { width: 100%; }
+  .cal-toolbar { flex-wrap: wrap; gap: 8px; }
+  .cal-month { min-width: 0; font-size: 16px; }
+  /* One filter per row at 16px (smaller text makes iPhones zoom in when tapped). */
+  .cal-filters .hdr-select { flex: 1 1 100%; min-width: 0; font-size: 16px; }
+  .cal-hint { display: none; }
+  .legend { gap: 8px 12px; }
+
+  /* Calendar → agenda: one card per day that has content (plus today), full dates. */
+  .cal { border: 0; background: transparent; overflow: visible; box-shadow: none; }
+  .cal-dow { display: none; }
+  .cal-grid { display: block; }
+  .cal-cell { display: none; min-height: 0; background: #fff; border: 1px solid var(--border); border-radius: 12px;
+    margin-bottom: 10px; padding: 11px 12px 6px; box-shadow: var(--shadow-sm); }
+  .cal-cell.has-items:not(.other), .cal-cell.today:not(.other) { display: block; }
+  .week-view .cal-cell { display: block; }
+  .cal-cell .cal-daynum, .cal-cell.today .cal-daynum {
+    font-size: 0; width: auto; height: auto; background: none; border-radius: 0; display: block; margin-bottom: 8px; color: var(--ink);
+  }
+  .cal-daynum::before { content: attr(data-label); font-size: 13.5px; font-weight: 700; }
+  .cal-cell.today .cal-daynum::before { color: var(--blue-1); }
+  .cal-add { opacity: 1; top: 8px; right: 8px; width: 30px; height: 30px; font-size: 18px; border-radius: 8px; }
+  .cal-event { padding: 9px 10px; margin-bottom: 8px; }
+  .cal-event .t { font-size: 13.5px; -webkit-line-clamp: 3; padding-right: 4px; }
+  .cal-event .m { font-size: 12px; margin-top: 4px; }
+  .cal-empty { display: block; font-size: 12.5px; color: var(--muted-2); padding-bottom: 6px; }
+  .cal-agenda-empty { display: block; font-size: 13px; text-align: center; padding: 18px 0; }
+  .backlog .chip { min-width: 165px; max-width: 165px; }
+
+  /* Pop-ups fill the screen; buttons stay reachable at the bottom. */
+  .overlay { padding: 0; align-items: stretch; }
+  .modal { max-width: none; min-height: 100%; border-radius: 0; display: flex; flex-direction: column; }
+  .modal-head { position: sticky; top: 0; z-index: 2; background: #fff; padding: 14px 16px; padding-top: max(14px, env(safe-area-inset-top)); }
+  .modal-body { flex: 1; padding: 16px; }
+  .modal-foot { position: sticky; bottom: 0; background: #fff; padding: 12px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .field-row { grid-template-columns: 1fr; gap: 0; }
+  /* 16px text stops iPhones zooming in when a field is tapped. */
+  .field input, .field select, .field textarea, .login-card input { font-size: 16px; }
+
+  /* Reports: two tiles per row, stacked panels, wide tables scroll inside their card. */
+  .grid-2 { grid-template-columns: 1fr; }
+  .kpi-row, .kpi-5 { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .kpi { padding: 12px 13px; }
+  .kpi-value { font-size: 22px; }
+  .filters { grid-template-columns: 1fr; }
+  .filters > * { min-width: 0; }
+  /* "From → To" date pair shares the row instead of pushing the card wider. */
+  .field input[type="date"] { flex: 1 1 0; min-width: 0; width: auto; padding: 9px 6px; }
+  .card-pad .field { max-width: 100%; min-width: 0; }
+  .card-pad { padding: 14px; overflow-x: auto; }
+  .atable { font-size: 12.5px; }
+  .no-access { margin-top: 6vh; padding: 24px 18px; }
+  .login-card { padding: 24px 20px; }
+}

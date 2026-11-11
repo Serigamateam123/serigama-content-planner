@@ -1,0 +1,15 @@
+{
+  "name": "Serigama Content Planner",
+  "short_name": "Serigama",
+  "description": "Content planning and reporting for Serigama's TikTok and Instagram accounts.",
+  "start_url": "/#/calendar",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#4b57f5",
+  "theme_color": "#4b57f5",
+  "icons": [
+    { "src": "/public/icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" },
+    { "src": "/public/icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "maskable" }
+  ]
+}
