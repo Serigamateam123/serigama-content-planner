@@ -10,6 +10,53 @@ const ROLES = [
 ];
 const roleLabel = (id) => (ROLES.find((r) => r.id === id) || {}).label || id;
 
+// A readable random password: 3 words-ish chunks + digits, e.g. "Kopi-Rama-4821".
+const genPassword = () => {
+  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ', b = 'abcdefghijkmnopqrstuvwxyz', d = '23456789';
+  const r = (s, n) => Array.from(crypto.getRandomValues(new Uint32Array(n)), (x) => s[x % s.length]).join('');
+  return r(a, 1) + r(b, 4) + '-' + r(a, 1) + r(b, 4) + '-' + r(d, 4);
+};
+
+// The member's starting password: masked, with show / hide, copy, and "set new".
+function PasswordCell({ member, onSetNew }) {
+  const [show, setShow] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(member.start_password); }
+    catch (e) { const t = document.createElement('textarea'); t.value = member.start_password; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }
+    setCopied(true); setTimeout(() => setCopied(false), 1500);
+  };
+  const save = async () => { setBusy(true); const ok = await onSetNew(member.email, draft); setBusy(false); if (ok) { setEditing(false); setDraft(''); setShow(true); } };
+
+  if (editing) {
+    return html`<div style=${{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+      <input type="text" value=${draft} onInput=${(e) => setDraft(e.target.value)} placeholder="New password (8+ characters)" autocomplete="new-password"
+        style=${{ width: '190px', fontFamily: 'ui-monospace, Consolas, monospace' }} />
+      <button class="btn btn-sm" type="button" onClick=${() => setDraft(genPassword())} title="Make up a strong password">Generate</button>
+      <button class="btn btn-gold btn-sm" type="button" disabled=${busy || draft.length < 8} onClick=${save}>${busy ? 'Saving…' : 'Save'}</button>
+      <button class="btn btn-ghost btn-sm" type="button" onClick=${() => { setEditing(false); setDraft(''); }}>Cancel</button>
+    </div>`;
+  }
+  const setNewBtn = html`<button class="btn btn-ghost btn-sm" type="button" onClick=${() => { setDraft(''); setEditing(true); }}>Set new</button>`;
+  if (member.start_password) {
+    return html`<div style=${{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+      <code style=${{ fontSize: '13px', padding: '3px 8px', borderRadius: '6px', background: 'var(--border-2, #eef0f6)', minWidth: '120px', letterSpacing: show ? 0 : '2px' }}>
+        ${show ? member.start_password : '••••••••••'}
+      </code>
+      <button class="btn btn-sm" type="button" onClick=${() => setShow(!show)} aria-label=${show ? 'Hide password' : 'Show password'}>${show ? 'Hide' : 'Show'}</button>
+      <button class="btn btn-sm" type="button" onClick=${copy}>${copied ? 'Copied ✓' : 'Copy'}</button>
+      ${setNewBtn}
+    </div>`;
+  }
+  return html`<div style=${{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+    <span class="muted" style=${{ fontSize: '12.5px' }}>${member.password_changed ? 'Changed by member' : 'Not saved'}</span>
+    ${setNewBtn}
+  </div>`;
+}
+
 export function Team({ store, ownerEmail, onPreview }) {
   const [members, setMembers] = useState(null);
   const [form, setForm] = useState({ email: '', role: 'calendar', password: '' });
@@ -41,6 +88,15 @@ export function Team({ store, ownerEmail, onPreview }) {
     setMsg(null);
     try { await store.setTeamRole(email, role); setMsg({ ok: true, text: `${email} is now ${roleLabel(role)}.` }); await load(); }
     catch (err) { setMsg({ ok: false, text: err.message || String(err) }); }
+  };
+  const setNewPassword = async (email, password) => {
+    setMsg(null);
+    try {
+      await store.teamInvite({ action: 'set_password', email, password });
+      setMsg({ ok: true, text: `New password saved for ${email}. Send it to them privately — they sign in with it from now on.` });
+      await load();
+      return true;
+    } catch (err) { setMsg({ ok: false, text: err.message || String(err) }); return false; }
   };
   const remove = async (email) => {
     if (!confirm(`Remove ${email} from the team? They lose access straight away.`)) return;
@@ -77,6 +133,7 @@ export function Team({ store, ownerEmail, onPreview }) {
               <input type=${showPw ? 'text' : 'password'} required minLength="8" autocomplete="new-password" value=${form.password}
                 onInput=${(e) => setForm({ ...form, password: e.target.value })} placeholder="At least 8 characters" style=${{ flex: 1, minWidth: 0 }} />
               <button type="button" class="btn btn-sm" onClick=${() => setShowPw(!showPw)}>${showPw ? 'Hide' : 'Show'}</button>
+              <button type="button" class="btn btn-sm" title="Make up a strong password" onClick=${() => { setForm({ ...form, password: genPassword() }); setShowPw(true); }}>Generate</button>
             </div>
           </div>
         </div>
@@ -101,17 +158,19 @@ export function Team({ store, ownerEmail, onPreview }) {
       ${members == null ? html`<p class="muted">Loading…</p>`
         : !members.length ? html`<p class="muted" style=${{ fontSize: '13px' }}>Nobody yet — add someone above.</p>`
         : html`<div style=${{ overflowX: 'auto' }}><table class="atable">
-            <thead><tr><th>Email</th><th>Access</th><th>Added</th><th></th></tr></thead>
+            <thead><tr><th>Email</th><th>Access</th><th>Password</th><th>Added</th><th></th></tr></thead>
             <tbody>${members.map((m) => html`<tr>
               <td style=${{ fontWeight: 600 }}>${m.email}</td>
               <td><select class="hdr-select" value=${m.role} onChange=${(e) => changeRole(m.email, e.target.value)} aria-label=${'Access for ' + m.email}>
                 ${ROLES.map((r) => html`<option value=${r.id}>${r.label}</option>`)}
               </select></td>
+              <td><${PasswordCell} member=${m} onSetNew=${setNewPassword} /></td>
               <td class="muted">${new Date(m.invited_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
               <td><button class="btn btn-danger btn-sm" onClick=${() => remove(m.email)}>Remove</button></td>
             </tr>`)}</tbody>
           </table></div>`}
-      <p class="muted" style=${{ fontSize: '12px', marginTop: '10px' }}>Changes apply the next time they open or refresh the planner. Removing someone blocks their access to the data straight away.</p>
+      <p class="muted" style=${{ fontSize: '12px', marginTop: '10px' }}>Changes apply the next time they open or refresh the planner. Removing someone blocks their access to the data straight away.
+        The password shown is the starting one you set; once a member changes it themselves it shows “Changed by member” (nobody can see their own choice — use “Set new” if they forget it).</p>
     </div>
 
     ${onPreview ? html`<div class="card card-pad section-gap">

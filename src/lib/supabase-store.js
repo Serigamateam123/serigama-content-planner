@@ -94,6 +94,8 @@ export function makeSupabaseStore(url, anonKey) {
     async setPassword(password) {
       const { error } = await sb.auth.updateUser({ password });
       if (error) return { ok: false, message: error.message };
+      // A team member chose their own password: forget the starting one the owner set.
+      try { await sb.rpc('mark_my_password_changed'); } catch (e) { /* not on a team */ }
       return { ok: true, message: 'Password saved — you can now sign in with email + password.' };
     },
     async signOut() {
@@ -118,7 +120,10 @@ export function makeSupabaseStore(url, anonKey) {
       return { ownerId: dataOwnerId, role: row ? row.role : 'owner', email };
     },
     async listTeam() {
-      const { data, error } = await sb.from('team_members').select('email,role,invited_at').eq('owner_id', userId).order('invited_at');
+      // start_password / password_changed come from supabase/team_passwords.sql;
+      // fall back to the basic columns if that hasn't been run.
+      let { data, error } = await sb.from('team_members').select('email,role,invited_at,start_password,password_changed').eq('owner_id', userId).order('invited_at');
+      if (error) ({ data, error } = await sb.from('team_members').select('email,role,invited_at').eq('owner_id', userId).order('invited_at'));
       if (error) throw error;
       return data || [];
     },
