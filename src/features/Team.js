@@ -10,7 +10,7 @@ const ROLES = [
 ];
 const roleLabel = (id) => (ROLES.find((r) => r.id === id) || {}).label || id;
 
-export function Team({ store, ownerEmail }) {
+export function Team({ store, ownerEmail, onPreview }) {
   const [members, setMembers] = useState(null);
   const [form, setForm] = useState({ email: '', role: 'calendar', password: '' });
   const [busy, setBusy] = useState(false);
@@ -113,5 +113,14 @@ export function Team({ store, ownerEmail }) {
           </table></div>`}
       <p class="muted" style=${{ fontSize: '12px', marginTop: '10px' }}>Changes apply the next time they open or refresh the planner. Removing someone blocks their access to the data straight away.</p>
     </div>
+
+    ${onPreview ? html`<div class="card card-pad section-gap">
+      <div class="card-title">See what your team sees</div>
+      <p class="muted" style=${{ fontSize: '13px', margin: '4px 0 12px' }}>Opens the planner with a team member's menu and page access. Exit any time from the banner at the top.</p>
+      <div style=${{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <button class="btn" onClick=${() => onPreview('calendar')}>Preview as Calendar only</button>
+        <button class="btn" onClick=${() => onPreview('full')}>Preview as Full access</button>
+      </div>
+    </div>` : ''}
   </div>`;
 }

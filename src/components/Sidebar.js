@@ -19,12 +19,12 @@ const NAV = [
   { id: 'team', label: 'Team', icon: 'users', owner: true },
 ];
 
-// role: 'owner' | 'full' | 'calendar' (supabase/team.sql). Calendar-only logins see
-// just the Content Calendar; only the owner sees Team and can connect accounts.
-export function Sidebar({ route, role = 'owner', onNavigate, onNew, config, accounts, accountId, onSwitchAccount, calScope, onCalendarScope, session, isCloud, onSetPassword, onSignOut }) {
-  const nav = role === 'calendar'
-    ? [{ section: 'Plan' }, NAV.find((n) => n.id === 'calendar')]
-    : NAV.filter((n) => !n.owner || role === 'owner');
+// role: 'owner' | 'full' | 'calendar' (supabase/team.sql). Everyone sees the whole
+// menu; pages their role can't open (`locked`) show a lock and open a "no access"
+// notice instead. Only the owner can connect accounts.
+export function Sidebar({ route, role = 'owner', locked = [], onNavigate, onNew, config, accounts, accountId, onSwitchAccount, calScope, onCalendarScope, session, isCloud, onSetPassword, onSignOut }) {
+  const nav = NAV;
+  const isLocked = (id) => locked.includes(id);
   const canConnect = isCloud && role === 'owner';
   const owner = config.ownerName || 'Serigama';
   const initial = owner.trim().charAt(0).toUpperCase() || 'S';
@@ -84,10 +84,12 @@ export function Sidebar({ route, role = 'owner', onNavigate, onNew, config, acco
         (n) => n.section
           ? html`<div class="nav-label">${n.section}</div>`
           : html`<button
-          class=${'nav-item' + (route === n.id && !(n.id === 'calendar' && calSubs) ? ' active' : '') + (route === n.id ? ' current' : '')}
+          class=${'nav-item' + (route === n.id && !(n.id === 'calendar' && calSubs) ? ' active' : '') + (route === n.id ? ' current' : '') + (isLocked(n.id) ? ' locked' : '')}
           onClick=${() => onNavigate(n.id)}
+          title=${isLocked(n.id) ? "You don't have access to this page" : ''}
         >
           <${Icon} name=${n.icon} size=${17} /><span>${n.label}</span>
+          ${isLocked(n.id) ? html`<span class="nav-lock" aria-label="No access"><${Icon} name="lock" size=${13} /></span>` : ''}
         </button>
         ${n.id === 'calendar' && calSubs ? calSubs : ''}`
       )}

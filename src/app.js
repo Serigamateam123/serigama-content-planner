@@ -12,6 +12,7 @@ import { Targets } from './features/Targets.js';
 import { ContentModal } from './features/ContentModal.js';
 import { Login } from './features/Login.js';
 import { Team } from './features/Team.js';
+import { Icon } from './components/ui.js';
 import { readKV, writeKV, updateKVEntry } from './lib/kv.js';
 import { findPlanMatches, applyPlanMatches } from './lib/reconcile.js';
 import { initAccounts, setActiveAccount, accountOf, kvKey, kvBase, loadedAccounts, socialAccounts, accountColor } from './lib/account.js';
@@ -244,9 +245,19 @@ function App() {
     onPasswordSignIn=${(e, p) => store.signInWithPassword(e, p)} />`;
 
   // Team role: which pages this login may open, and the one to fall back to.
-  const role = (team && team.role) || 'owner';
+  // The owner can preview a member's view (Team page) — menus and pages only; it
+  // doesn't change what the owner's login can reach in the database.
+  const realRole = (team && team.role) || 'owner';
+  const previewRole = realRole === 'owner' ? (() => { try { return sessionStorage.getItem('serigama.previewRole'); } catch (e) { return null; } })() : null;
+  const role = previewRole === 'calendar' || previewRole === 'full' ? previewRole : realRole;
+  const setPreview = (r) => { try { r ? sessionStorage.setItem('serigama.previewRole', r) : sessionStorage.removeItem('serigama.previewRole'); } catch (e) { /* session only */ } navigate(r === 'calendar' ? 'calendar' : r ? 'dashboard' : 'team'); setDataVersion((v) => v + 1); };
   const allowed = ROLE_ROUTES[role] || ROUTES.filter((r) => r !== 'team' || role === 'owner');
-  const page = allowed.includes(route) ? route : allowed.includes('dashboard') ? 'dashboard' : allowed[0];
+  const locked = ROUTES.filter((r) => !allowed.includes(r));
+  // Opening the planner with no page in the address lands on the first allowed page;
+  // a page picked from the menu that the role can't open shows a "no access" notice.
+  const noHash = !(location.hash || '').replace(/^#\/?/, '');
+  const page = noHash && !allowed.includes(route) ? allowed[0] : route;
+  const denied = !allowed.includes(page);
 
   // Every screen shows the account picked in the sidebar: its posts, their metric
   // history and its follower snapshots (per-account app_kv figures resolve in kv.js).
@@ -283,6 +294,7 @@ function App() {
     <${Sidebar}
       route=${page}
       role=${role}
+      locked=${locked}
       onNavigate=${navigate}
       onNew=${() => openNew()}
       config=${config}
@@ -298,8 +310,14 @@ function App() {
     />
     <main class="main">
       <div class="main-inner" key=${(page === 'calendar' && allCalendar ? 'all' : accountId) || 'none'}>
-        ${page === 'team'
-          ? html`<${Team} store=${store} ownerEmail=${team && team.email} />`
+        ${role !== realRole ? html`<div class="toast" style=${{ margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: '#eef2ff', color: '#3730a3', borderColor: '#c7d2fe' }}>
+          <strong>Preview:</strong> this is what a <strong>${role === 'calendar' ? 'Calendar only' : 'Full access'}</strong> team member sees.
+          <button class="btn btn-sm" style=${{ marginLeft: 'auto' }} onClick=${() => setPreview(null)}>Exit preview</button>
+        </div>` : ''}
+        ${denied
+          ? html`<${NoAccess} page=${page} role=${role} onCalendar=${() => navigate('calendar')} canCalendar=${allowed.includes('calendar')} />`
+          : page === 'team'
+          ? html`<${Team} store=${store} ownerEmail=${team && team.email} onPreview=${setPreview} />`
           : page === 'dashboard'
           ? html`<${Dashboard} contents=${contents} config=${config}
               onNew=${() => openNew()} onOpen=${openEdit} onNavigate=${navigate} onRefresh=${loadData} />`
@@ -339,6 +357,22 @@ function App() {
 
 // Small dialog to set/change the account password (works because the user is
 // already signed in — no email is sent, so it never hits the email rate limit).
+// Shown in place of a page this login's role can't open (supabase/team.sql).
+const PAGE_NAMES = { dashboard: 'Content Dashboard', calendar: 'Content Calendar', fundamental: 'Content Funnel', overview: 'Monthly Report', analytics: 'Post Performance', targets: 'Targets', team: 'Team' };
+function NoAccess({ page, role, canCalendar, onCalendar }) {
+  const name = PAGE_NAMES[page] || 'this page';
+  return html`<div class="card no-access">
+    <div class="no-access-icon"><${Icon} name="lock" size=${24} /></div>
+    <h2 style=${{ margin: '0 0 8px', fontSize: '19px' }}>You don't have access to ${name}</h2>
+    <p class="muted" style=${{ margin: '0 0 18px', fontSize: '13.5px', lineHeight: 1.55 }}>
+      ${role === 'calendar'
+        ? 'Your account can view and plan content in the Content Calendar only. If you need this page, ask the planner owner to change your access.'
+        : 'Only the planner owner can open this page. If you need it, ask the planner owner.'}
+    </p>
+    ${canCalendar ? html`<button class="btn btn-gold" onClick=${onCalendar}>Go to Content Calendar</button>` : ''}
+  </div>`;
+}
+
 function PasswordModal({ onSave, onClose }) {
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
