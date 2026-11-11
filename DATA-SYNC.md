@@ -187,6 +187,20 @@ only for recent months.
 
 ---
 
+## 5e. Team access (2026-11-11)
+
+The owner login (serigamateam@gmail.com) adds people on **Settings → Team** with a role:
+**Calendar only** (content plan for all accounts — add / edit / drag — no reports or figures) or
+**Full access** (everything except connecting accounts and the Team page). Rules live in
+`supabase/team.sql` (run once, already applied): `team_members` + extra RLS policies next to the
+owner's own ones; connection tokens (`integrations`) stay owner-only. Logins are created by the
+Edge Function `team-invite` (JWT on) with a starting password the owner types — no email is sent,
+because Supabase's built-in mailer only reaches pre-approved addresses. Members save into the
+owner's data (`dataOwnerId` in `supabase-store.js`). Tested 2026-11-11 with a rolled-back SQL
+transaction acting as a calendar / full / removed member.
+
+---
+
 ## 6. Known limits (by design, not bugs)
 
 - **Traffic source** — account-level only; identical for any date range.

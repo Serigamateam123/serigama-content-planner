@@ -15,9 +15,17 @@ const NAV = [
   { id: 'overview', label: 'Monthly Report', icon: 'report' },
   { id: 'analytics', label: 'Post Performance', icon: 'analytics' },
   { id: 'targets', label: 'Targets', icon: 'target' },
+  { section: 'Settings', owner: true },
+  { id: 'team', label: 'Team', icon: 'users', owner: true },
 ];
 
-export function Sidebar({ route, onNavigate, onNew, config, accounts, accountId, onSwitchAccount, calScope, onCalendarScope, session, isCloud, onSetPassword, onSignOut }) {
+// role: 'owner' | 'full' | 'calendar' (supabase/team.sql). Calendar-only logins see
+// just the Content Calendar; only the owner sees Team and can connect accounts.
+export function Sidebar({ route, role = 'owner', onNavigate, onNew, config, accounts, accountId, onSwitchAccount, calScope, onCalendarScope, session, isCloud, onSetPassword, onSignOut }) {
+  const nav = role === 'calendar'
+    ? [{ section: 'Plan' }, NAV.find((n) => n.id === 'calendar')]
+    : NAV.filter((n) => !n.owner || role === 'owner');
+  const canConnect = isCloud && role === 'owner';
   const owner = config.ownerName || 'Serigama';
   const initial = owner.trim().charAt(0).toUpperCase() || 'S';
   const social = socialAccounts(accounts);
@@ -61,8 +69,8 @@ export function Sidebar({ route, onNavigate, onNew, config, accounts, accountId,
             title=${current ? `${PLATFORM_NAME[current.platform]} account: @${current.handle || current.display_name}` : 'No account connected'}>
             ${social.length ? '' : html`<option value="">No account connected</option>`}
             ${social.map((a) => html`<option value=${a.id}>@${a.handle || a.display_name} · ${PLATFORM_NAME[a.platform]}</option>`)}
-            ${isCloud ? html`<option value=${ADD}>+ Add TikTok account…</option>` : ''}
-            ${isCloud ? html`<option value=${ADD_IG}>+ Add Instagram account…</option>` : ''}
+            ${canConnect ? html`<option value=${ADD}>+ Add TikTok account…</option>` : ''}
+            ${canConnect ? html`<option value=${ADD_IG}>+ Add Instagram account…</option>` : ''}
           </select>
         </label>`
       : null}
@@ -72,7 +80,7 @@ export function Sidebar({ route, onNavigate, onNew, config, accounts, accountId,
     </button>
 
     <nav class="nav">
-      ${NAV.map(
+      ${nav.map(
         (n) => n.section
           ? html`<div class="nav-label">${n.section}</div>`
           : html`<button

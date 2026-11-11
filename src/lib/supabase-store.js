@@ -10,10 +10,14 @@ import { createClient } from '@supabase/supabase-js';
 export function makeSupabaseStore(url, anonKey) {
   const sb = createClient(url, anonKey);
   let userId = null;
+  // Whose planner data this login works on: its own (the owner), or — for a team
+  // member — the owner who invited it (supabase/team.sql). New rows are written
+  // under that id so the whole team shares one plan.
+  let dataOwnerId = null;
 
   const requireUser = () => {
     if (!userId) throw new Error('Not signed in');
-    return userId;
+    return dataOwnerId || userId;
   };
 
   // Attach the latest metric row to each content as `.metrics` (or null).
@@ -95,11 +99,48 @@ export function makeSupabaseStore(url, anonKey) {
     async signOut() {
       await sb.auth.signOut();
       userId = null;
+      dataOwnerId = null;
       return { ok: true };
+    },
+
+    // --- team (supabase/team.sql + Edge Function team-invite) ---
+    // Which planner this login works on, and with which role:
+    //   { ownerId, role: 'owner' | 'full' | 'calendar', email }
+    async teamContext() {
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user) return null;
+      userId = user.id;
+      const email = String(user.email || '').toLowerCase();
+      let row = null;
+      const { data, error } = await sb.from('team_members').select('owner_id,role').eq('email', email).order('invited_at').limit(1);
+      if (!error && data && data.length) row = data[0];
+      dataOwnerId = row ? row.owner_id : user.id;
+      return { ownerId: dataOwnerId, role: row ? row.role : 'owner', email };
+    },
+    async listTeam() {
+      const { data, error } = await sb.from('team_members').select('email,role,invited_at').eq('owner_id', userId).order('invited_at');
+      if (error) throw error;
+      return data || [];
+    },
+    async setTeamRole(email, role) {
+      const { error } = await sb.from('team_members').update({ role }).eq('owner_id', userId).eq('email', email);
+      if (error) throw error;
+    },
+    async teamInvite(body) {
+      const { data, error } = await sb.functions.invoke('team-invite', { body });
+      if (error) {
+        let msg = error.message;
+        try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (e) { /* keep generic */ }
+        throw new Error(msg);
+      }
+      if (data && data.ok === false) throw new Error(data.error || 'Could not update the team.');
+      return data;
     },
     onAuthChange(cb) {
       const { data } = sb.auth.onAuthStateChange((_e, session) => {
-        userId = session?.user?.id || null;
+        const next = session?.user?.id || null;
+        if (next !== userId) dataOwnerId = null; // re-read by teamContext() on the next load
+        userId = next;
         cb(session);
       });
       return () => data?.subscription?.unsubscribe();

@@ -11,11 +11,14 @@ import { AnalyticsDashboard } from './features/AnalyticsDashboard.js';
 import { Targets } from './features/Targets.js';
 import { ContentModal } from './features/ContentModal.js';
 import { Login } from './features/Login.js';
+import { Team } from './features/Team.js';
 import { readKV, writeKV, updateKVEntry } from './lib/kv.js';
 import { findPlanMatches, applyPlanMatches } from './lib/reconcile.js';
 import { initAccounts, setActiveAccount, accountOf, kvKey, kvBase, loadedAccounts, socialAccounts, accountColor } from './lib/account.js';
 
-const ROUTES = ['dashboard', 'calendar', 'fundamental', 'overview', 'targets', 'analytics'];
+const ROUTES = ['dashboard', 'calendar', 'fundamental', 'overview', 'targets', 'analytics', 'team'];
+// Pages each team role may open (supabase/team.sql enforces the data side).
+const ROLE_ROUTES = { calendar: ['calendar'] };
 
 // Planning fields kept per post in app_kv (key `serigama.contentmeta`, map of
 // content id -> fields) rather than as columns, so they work without a database
@@ -70,13 +73,14 @@ const KV_KEYS = [
 // Runs before the analytics views read localStorage, so values are in place.
 // Every account's copy of a key (`<key>@<account id>`, see lib/account.js) is
 // mirrored down too; only the primary account's original keys are ever seeded up.
-async function syncKV() {
+async function syncKV(role = 'owner') {
   if (!isCloud || !store.getKV) return;
   let remote = {};
   try { remote = await store.getKV(); } catch (e) { return; }
   for (const [k, v] of Object.entries(remote)) {
     if (KV_KEYS.includes(kvBase(k)) && localStorage.getItem(k) !== v) localStorage.setItem(k, v);
   }
+  if (role === 'calendar') return; // calendar-only logins never seed figures up
   for (const k of KV_KEYS) {
     if (remote[k] == null) {
       const local = localStorage.getItem(k);
@@ -105,6 +109,8 @@ function App() {
   const [dataVersion, setDataVersion] = useState(0); // bumps after each load so KV-backed views re-read
   const [loadingData, setLoadingData] = useState(false);
   const [pwModal, setPwModal] = useState(false); // "set password" dialog
+  // { ownerId, role: 'owner' | 'full' | 'calendar', email } — whose plan this login sees.
+  const [team, setTeam] = useState(null);
 
   // --- routing via hash ---
   useEffect(() => {
@@ -129,10 +135,23 @@ function App() {
 
   const loadData = useCallback(async () => {
     setLoadingData(true);
+    // Team role first: it decides whose data this login works on.
+    const ctx = isCloud && store.teamContext ? (await store.teamContext()) || { role: 'owner' } : { role: 'owner' };
+    // A different login than last time in this browser: drop the cached figures,
+    // so a calendar-only login never sees report numbers cached by a full login.
+    try {
+      const who = ctx.email || '';
+      const prev = localStorage.getItem('serigama.cacheUser');
+      if ((prev && prev !== who) || (!prev && ctx.role === 'calendar')) {
+        Object.keys(localStorage).filter((k) => KV_KEYS.includes(kvBase(k))).forEach((k) => localStorage.removeItem(k));
+      }
+      localStorage.setItem('serigama.cacheUser', who);
+    } catch (e) { /* cache only */ }
+    setTeam(ctx);
     // Saved figures (app_kv → localStorage) download alongside the tables; nothing
     // below reads them until all of it has arrived.
     const [, contents, accounts, accountStats, metricsHistory, studioMetrics] = await Promise.all([
-      syncKV(),
+      syncKV(ctx.role),
       store.listContents(),
       store.listAccounts(),
       store.listAccountStats(),
@@ -156,7 +175,7 @@ function App() {
     // A planned item whose video has now been posted (synced) is replaced by the
     // posted video, keeping the plan's script / pillar / notes on it (lib/reconcile.js).
     let finalContents = withStudio;
-    if (isCloud) {
+    if (isCloud && ctx.role !== 'calendar') {
       const pairs = findPlanMatches(withStudio, accountOf);
       if (pairs.length) {
         try {
@@ -224,9 +243,22 @@ function App() {
     onSignIn=${(e) => store.signIn(e)}
     onPasswordSignIn=${(e, p) => store.signInWithPassword(e, p)} />`;
 
+  // Team role: which pages this login may open, and the one to fall back to.
+  const role = (team && team.role) || 'owner';
+  const allowed = ROLE_ROUTES[role] || ROUTES.filter((r) => r !== 'team' || role === 'owner');
+  const page = allowed.includes(route) ? route : allowed.includes('dashboard') ? 'dashboard' : allowed[0];
+
   // Every screen shows the account picked in the sidebar: its posts, their metric
   // history and its follower snapshots (per-account app_kv figures resolve in kv.js).
   const { accounts } = all;
+  // Signed in, data loaded, but this login has no planner of its own and isn't on a team.
+  if (isCloud && team && role === 'owner' && !loadingData && dataVersion > 0 && !accounts.length && !all.contents.length) {
+    return html`<div class="boot" style=${{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', boxSizing: 'border-box', gap: '12px', textAlign: 'center', padding: '24px' }}>
+      <div style=${{ fontSize: '18px', fontWeight: 700 }}>You don't have access to this planner yet</div>
+      <div class="muted" style=${{ maxWidth: '420px' }}>Ask the planner owner to add <strong>${team.email}</strong> on the Team page, then sign in again.</div>
+      <button class="btn" onClick=${async () => { await store.signOut(); setSession(null); }}>Sign out</button>
+    </div>`;
+  }
   const contents = all.contents.filter((c) => accountOf(c) === accountId);
   const ids = new Set(contents.map((c) => c.id));
   const metricsHistory = all.metricsHistory.filter((m) => ids.has(m.content_id));
@@ -249,7 +281,8 @@ function App() {
 
   return html`<div class="app">
     <${Sidebar}
-      route=${route}
+      route=${page}
+      role=${role}
       onNavigate=${navigate}
       onNew=${() => openNew()}
       config=${config}
@@ -264,22 +297,24 @@ function App() {
       onSignOut=${async () => { await store.signOut(); setSession(null); }}
     />
     <main class="main">
-      <div class="main-inner" key=${(route === 'calendar' && allCalendar ? 'all' : accountId) || 'none'}>
-        ${route === 'dashboard'
+      <div class="main-inner" key=${(page === 'calendar' && allCalendar ? 'all' : accountId) || 'none'}>
+        ${page === 'team'
+          ? html`<${Team} store=${store} ownerEmail=${team && team.email} />`
+          : page === 'dashboard'
           ? html`<${Dashboard} contents=${contents} config=${config}
               onNew=${() => openNew()} onOpen=${openEdit} onNavigate=${navigate} onRefresh=${loadData} />`
-          : route === 'calendar'
+          : page === 'calendar'
           ? html`<${Calendar} contents=${calendarContents}
               accounts=${allCalendar ? socialAccounts(accounts).map((a) => ({ id: a.id, label: '@' + (a.handle || a.display_name), color: accountColor(a.id, accounts) })) : null}
               accountTag=${allCalendar ? accountTag : null}
               scopeLabel=${allCalendar ? 'All accounts' : (() => { const a = accounts.find((x) => x.id === accountId); return a ? '@' + (a.handle || a.display_name) : ''; })()}
               onNew=${() => openNew()} onOpen=${openEdit} onNewOnDate=${(d) => openNew(d)} onReschedule=${rescheduleContent} />`
-          : route === 'fundamental'
+          : page === 'fundamental'
           ? html`<${Fundamental} contents=${contents} dataVersion=${dataVersion} onPlan=${(prefill) => openNew(null, prefill)} />`
-          : route === 'overview'
+          : page === 'overview'
           ? html`<${AnalyticsDashboard} contents=${contents} accounts=${accounts} accountStats=${accountStats}
               onNavigate=${navigate} onRefresh=${loadData} />`
-          : route === 'targets'
+          : page === 'targets'
           ? html`<${Targets} contents=${contents} metricsHistory=${metricsHistory} />`
           : html`<${Analytics} contents=${contents} accounts=${accounts} accountStats=${accountStats} metricsHistory=${metricsHistory} onSaveMetrics=${saveMetrics} />`}
       </div>
