@@ -178,7 +178,7 @@ export function Calendar({ contents, accounts = null, accountTag = null, scopeLa
 
     ${(() => {
       // Phone agenda: a month with nothing scheduled would otherwise look blank.
-      const inView = weeks.flat().filter((d) => view !== 'month' || isSameMonth(d, cursor));
+      const inView = weeks.flat(); // includes the neighbouring-month days the grid shows
       return inView.some((d) => (byDay.get(dayKey(d)) || []).length) ? '' : html`<p class="cal-agenda-empty muted">Nothing scheduled ${view === 'month' ? 'this month' : 'this week'} yet.</p>`;
     })()}
     <div class=${'cal section-gap' + (view === 'week' ? ' week-view' : '')}>
