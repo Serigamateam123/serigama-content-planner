@@ -44,16 +44,21 @@ export function TikTokConnect({ onSynced }) {
   const [conns, setConns] = useState([]);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Collapsed to one slim line by default; "Details" shows each account + reconnect links.
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem('serigama.connOpen') === '1'; } catch (e) { return false; } });
+  const toggle = () => { const n = !open; setOpen(n); try { localStorage.setItem('serigama.connOpen', n ? '1' : '0'); } catch (e) { /* preference only */ } };
 
   const load = async () => {
     if (!isCloud || !store.client) return;
     try {
-      const { data } = await store.client
-        .from('integrations')
-        .select('platform,display_name,last_synced_at')
-        .in('platform', ['tiktok', 'instagram'])
-        .order('created_at');
-      setConns(data || []);
+      const [{ data }, { data: accts }] = await Promise.all([
+        store.client.from('integrations').select('platform,display_name,last_synced_at,account_id')
+          .in('platform', ['tiktok', 'instagram']).order('created_at'),
+        store.client.from('accounts').select('id,handle'),
+      ]);
+      // Show the planner's handle (e.g. serigama.hq) rather than TikTok's display name.
+      const handleOf = new Map((accts || []).map((a) => [a.id, a.handle]));
+      setConns((data || []).map((c) => ({ ...c, display_name: handleOf.get(c.account_id) || c.display_name })));
     } catch (e) { /* ignore */ }
   };
 
@@ -115,6 +120,40 @@ export function TikTokConnect({ onSynced }) {
     ${c.last_synced_at ? ' · last synced ' + new Date(c.last_synced_at).toLocaleString() : ' · not synced yet'}
   </div>`;
   const link = (label, onClick, title) => html`<span onClick=${onClick} title=${title || ''} style=${{ cursor: 'pointer', textDecoration: 'underline' }}>${label}</span>`;
+
+  // Slim line: when the numbers were last updated, Refresh, and a Details toggle.
+  if (conns.length) {
+    const latest = conns.map((c) => c.last_synced_at).filter(Boolean).sort().pop();
+    const when = latest ? new Date(latest) : null;
+    const whenText = when ? (when.toDateString() === new Date().toDateString()
+      ? 'today ' + when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+      : when.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ', ' + when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })) : 'not yet';
+    // An account whose daily sync hasn't succeeded for 2+ days (e.g. Facebook withdrew
+    // the planner's access) is called out here, since the details are tucked away.
+    const stale = conns.filter((c) => !c.last_synced_at || Date.now() - new Date(c.last_synced_at).getTime() > 2 * 86400000);
+    const staleWarn = stale.length ? html`<div class="toast toast-err" style=${{ flexBasis: '100%', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+      <span>⚠ ${stale.map((c) => `${c.platform === 'instagram' ? 'Instagram' : 'TikTok'} @${c.display_name}`).join(', ')}${stale.length === 1 ? " hasn't" : " haven't"} updated since ${stale.map((c) => c.last_synced_at ? new Date(c.last_synced_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'connecting').join(' / ')} — the connection needs renewing.</span>
+      ${stale.some((c) => c.platform === 'instagram') ? html`<button class="btn btn-sm" onClick=${connectInstagram}>Reconnect Instagram</button>` : ''}
+      ${stale.some((c) => c.platform === 'tiktok') ? html`<button class="btn btn-sm" onClick=${() => connect(true)}>Reconnect TikTok</button>` : ''}
+    </div>` : '';
+    return html`<div class="section-gap" style=${{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', fontSize: '12.5px' }}>
+      <span class="muted">Numbers update every morning · last updated ${whenText} · ${conns.length} account${conns.length === 1 ? '' : 's'}</span>
+      <button class="btn btn-sm" onClick=${syncNow} disabled=${busy}><${Icon} name="refresh" size=${13} /> ${busy ? 'Refreshing…' : 'Refresh'}</button>
+      <button class="btn btn-ghost btn-sm" onClick=${toggle} aria-expanded=${open}>${open ? 'Hide details ▴' : 'Details ▾'}</button>
+      ${open ? html`<div class="card card-pad" style=${{ flexBasis: '100%', marginTop: '2px' }}>
+        <div class="card-title" style=${{ fontSize: '13.5px' }}>Connected accounts</div>
+        ${conns.map(line)}
+        <div class="muted" style=${{ fontSize: '12.5px', marginTop: '6px' }}>
+          ${link('Connect another TikTok account', () => connect(true))}
+          · ${link(igConns.length ? 'Connect another Instagram account' : 'Connect Instagram', connectInstagram)}
+          · ${link('reconnect TikTok', () => connect(true), 'Sign in again to a connected TikTok account')}
+          ${igConns.length ? html` · ${link('reconnect Instagram', connectInstagram)}` : ''}
+        </div>
+      </div>` : ''}
+      ${staleWarn}
+      ${msg ? html`<div class=${'toast' + (msg.ok ? '' : ' toast-err')} style=${{ flexBasis: '100%', marginTop: '2px' }}>${msg.text}</div>` : null}
+    </div>`;
+  }
 
   return html`<div class="card card-pad section-gap">
     <div style=${{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
