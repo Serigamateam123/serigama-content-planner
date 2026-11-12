@@ -1,10 +1,11 @@
 import { html } from '../lib/html.js';
 import { Icon } from './ui.js';
 import { socialAccounts, PLATFORM_NAME, accountColor } from '../lib/account.js';
-import { startTikTokConnect, startInstagramConnect } from '../features/TikTokConnect.js';
+import { startTikTokConnect, startInstagramConnect, startThreadsConnect } from '../features/TikTokConnect.js';
 
 const ADD = '__add_tiktok__';
 const ADD_IG = '__add_instagram__';
+const ADD_TH = '__add_threads__';
 
 const NAV = [
   { section: 'Plan' },
@@ -35,9 +36,9 @@ export function Sidebar({ open = false, route, role = 'owner', locked = [], onNa
   // picked); the select snaps back to the current account meanwhile.
   const pickAccount = async (e) => {
     const v = e.target.value;
-    if (v !== ADD && v !== ADD_IG) { onSwitchAccount(v); return; }
+    if (v !== ADD && v !== ADD_IG && v !== ADD_TH) { onSwitchAccount(v); return; }
     e.target.value = accountId || '';
-    const err = v === ADD ? await startTikTokConnect(hasTikTok) : await startInstagramConnect();
+    const err = v === ADD ? await startTikTokConnect(hasTikTok) : v === ADD_TH ? await startThreadsConnect() : await startInstagramConnect();
     if (err) alert(err);
   };
   // Content Calendar sub-items: every account together, or one account's calendar.
@@ -71,6 +72,7 @@ export function Sidebar({ open = false, route, role = 'owner', locked = [], onNa
             ${social.map((a) => html`<option value=${a.id}>@${a.handle || a.display_name} · ${PLATFORM_NAME[a.platform]}</option>`)}
             ${canConnect ? html`<option value=${ADD}>+ Add TikTok account…</option>` : ''}
             ${canConnect ? html`<option value=${ADD_IG}>+ Add Instagram account…</option>` : ''}
+            ${canConnect ? html`<option value=${ADD_TH}>+ Add Threads account…</option>` : ''}
           </select>
         </label>`
       : null}

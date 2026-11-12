@@ -63,6 +63,7 @@ const KV_KEYS = [
   'serigama.targets',
   'serigama.reels', // Instagram reel extras (written by instagram-sync), keyed by post id
   'serigama.reelsweb', // Instagram per-reel follows / follower split read from instagram.com insights (Thursday capture)
+  'serigama.threadsposts', // Threads per-post reposts / quotes / shares (written by threads-sync), keyed by post id
 ];
 
 // Supabase (app_kv) is the SOURCE OF TRUTH for these manually-captured figures.

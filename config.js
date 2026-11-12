@@ -37,4 +37,13 @@ window.PLANNER_CONFIG = {
     redirectUri: 'https://acfscrvvlzjtbsxturkx.supabase.co/functions/v1/instagram-callback',
     authorizeUrl: 'https://www.facebook.com/v25.0/dialog/oauth',
   },
+
+  // Threads connection (same Meta app, "Access the Threads API" use case; it has its
+  // own app ID). Read-only scopes. Non-secret — THREADS_APP_SECRET lives only in Supabase.
+  threads: {
+    appId: '1447493470865177',
+    scopes: 'threads_basic,threads_manage_insights',
+    redirectUri: 'https://acfscrvvlzjtbsxturkx.supabase.co/functions/v1/threads-callback',
+    authorizeUrl: 'https://threads.net/oauth/authorize',
+  },
 };

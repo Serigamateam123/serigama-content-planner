@@ -156,6 +156,22 @@ key is no longer read.
 
 ---
 
+## 5b-2. Threads @serigamahq (connected 2026-11-12, fully automatic)
+
+- Same Meta app, use case **Access the Threads API** (own Threads app ID 1447493470865177;
+  read-only `threads_basic` + `threads_manage_insights`). Redirect / uninstall / delete callback
+  URLs point at `threads-callback`. @serigamahq is a **Threads Tester** (app in development mode).
+- Supabase secret `THREADS_APP_SECRET` (copy it only after clicking **Show** on Meta — the masked
+  ●●●● value fails with "Invalid client_secret"). `threads-callback` and `threads-sync` have
+  verify_jwt **off**; cron `threads-daily-sync` at 22:10 UTC (6:10 AM MYT), `supabase/cron_threads_sync.sql`.
+- Tokens last 60 days; `threads-sync` renews them when < 15 days remain. Per post: views, likes,
+  replies (→ comments), reposts + quotes + shares (→ shares; split kept in `serigama.threadsposts`).
+  Account: followers → `account_stats`, views per month → `serigama.monthly@<id>`, audience
+  (needs 100+ followers) → `serigama.audience@<id>`.
+- If Instagram/Threads syncs fail with "Cannot call API for app … on behalf of user", check
+  developers.facebook.com: Meta paused the developer account once (Nov 2026, "Account
+  confirmation needed") until the owner confirmed it.
+
 ## 5c. Planned item → posted video (automatic)
 
 Each time the planner loads (cloud mode), `src/lib/reconcile.js` looks for a planned item

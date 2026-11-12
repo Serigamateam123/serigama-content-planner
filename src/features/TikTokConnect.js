@@ -37,6 +37,23 @@ export async function startInstagramConnect() {
     '&state=' + encodeURIComponent(uid);
 }
 
+// Send the browser to Threads' approval page (read-only: profile, posts, insights).
+// threads-callback stores the connection; the Threads account must be a Threads
+// Tester on the Meta app while the app is in development mode.
+export async function startThreadsConnect() {
+  const { data } = await store.client.auth.getSession();
+  const uid = data?.session?.user?.id;
+  if (!uid) return 'Please sign in first.';
+  const th = config.threads;
+  if (!th) return 'Threads is not set up in config.js.';
+  window.location.href = th.authorizeUrl +
+    '?client_id=' + encodeURIComponent(th.appId) +
+    '&redirect_uri=' + encodeURIComponent(th.redirectUri) +
+    '&scope=' + encodeURIComponent(th.scopes) +
+    '&response_type=code' +
+    '&state=' + encodeURIComponent(uid);
+}
+
 // Connections card shown on the Analytics screen. Cloud mode only (needs a
 // signed-in user id to tie the connection + synced posts to). A login can connect
 // several TikTok and Instagram accounts; Refresh syncs all of them.
@@ -53,7 +70,7 @@ export function TikTokConnect({ onSynced }) {
     try {
       const [{ data }, { data: accts }] = await Promise.all([
         store.client.from('integrations').select('platform,display_name,last_synced_at,account_id')
-          .in('platform', ['tiktok', 'instagram']).order('created_at'),
+          .in('platform', ['tiktok', 'instagram', 'threads']).order('created_at'),
         store.client.from('accounts').select('id,handle'),
       ]);
       // Show the planner's handle (e.g. serigama.hq) rather than TikTok's display name.
@@ -69,10 +86,14 @@ export function TikTokConnect({ onSynced }) {
     else if (h.includes('instagram=connected')) setMsg({ ok: true, text: 'Instagram connected! Click “Refresh” to pull its posts.' });
     else if (h.includes('instagram=none')) setMsg({ ok: false, text: 'Facebook connected, but none of the Pages you picked has an Instagram professional account linked. Link the Instagram account to its Facebook Page, then connect again.' });
     else if (h.includes('instagram=error')) setMsg({ ok: false, text: 'Instagram connection failed — please try again.' });
+    else if (h.includes('threads=connected')) setMsg({ ok: true, text: 'Threads connected! Click “Refresh” to pull its posts.' });
+    else if (h.includes('threads=error')) setMsg({ ok: false, text: 'Threads connection failed — check the account accepted the tester invite, then try again.' });
     load();
   }, []);
   const tiktokConns = conns.filter((c) => c.platform === 'tiktok');
   const igConns = conns.filter((c) => c.platform === 'instagram');
+  const thConns = conns.filter((c) => c.platform === 'threads');
+  const PNAME = { tiktok: 'TikTok', instagram: 'Instagram', threads: 'Threads' };
 
   if (!isCloud) {
     return html`<div class="card card-pad section-gap">
@@ -90,6 +111,10 @@ export function TikTokConnect({ onSynced }) {
     const err = await startInstagramConnect();
     if (err) setMsg({ ok: false, text: err });
   };
+  const connectThreads = async () => {
+    const err = await startThreadsConnect();
+    if (err) setMsg({ ok: false, text: err });
+  };
 
   // Sync every platform that has a connection; report each one's result.
   const syncNow = async () => {
@@ -97,7 +122,7 @@ export function TikTokConnect({ onSynced }) {
     try {
       const { data: s } = await store.client.auth.getSession();
       const body = { user_id: s?.session?.user?.id };
-      const fns = [tiktokConns.length ? 'tiktok-sync' : null, igConns.length ? 'instagram-sync' : null].filter(Boolean);
+      const fns = [tiktokConns.length ? 'tiktok-sync' : null, igConns.length ? 'instagram-sync' : null, thConns.length ? 'threads-sync' : null].filter(Boolean);
       const replies = await Promise.all(fns.map((fn) => store.client.functions.invoke(fn, { body })));
       const failedFn = replies.find((r) => r.error);
       if (failedFn) throw failedFn.error;
@@ -116,7 +141,7 @@ export function TikTokConnect({ onSynced }) {
   };
 
   const line = (c) => html`<div class="muted" style=${{ fontSize: '12.5px', marginTop: '2px' }}>
-    ${c.platform === 'instagram' ? 'Instagram' : 'TikTok'} · connected as ${c.display_name || 'account'}
+    ${PNAME[c.platform] || c.platform} · connected as ${c.display_name || 'account'}
     ${c.last_synced_at ? ' · last synced ' + new Date(c.last_synced_at).toLocaleString() : ' · not synced yet'}
   </div>`;
   const link = (label, onClick, title) => html`<span onClick=${onClick} title=${title || ''} style=${{ cursor: 'pointer', textDecoration: 'underline' }}>${label}</span>`;
@@ -132,9 +157,10 @@ export function TikTokConnect({ onSynced }) {
     // the planner's access) is called out here, since the details are tucked away.
     const stale = conns.filter((c) => !c.last_synced_at || Date.now() - new Date(c.last_synced_at).getTime() > 2 * 86400000);
     const staleWarn = stale.length ? html`<div class="toast toast-err" style=${{ flexBasis: '100%', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-      <span>⚠ ${stale.map((c) => `${c.platform === 'instagram' ? 'Instagram' : 'TikTok'} @${c.display_name}`).join(', ')}${stale.length === 1 ? " hasn't" : " haven't"} updated since ${stale.map((c) => c.last_synced_at ? new Date(c.last_synced_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'connecting').join(' / ')} — the connection needs renewing.</span>
+      <span>⚠ ${stale.map((c) => `${PNAME[c.platform] || c.platform} @${c.display_name}`).join(', ')}${stale.length === 1 ? " hasn't" : " haven't"} updated since ${stale.map((c) => c.last_synced_at ? new Date(c.last_synced_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'connecting').join(' / ')} — the connection needs renewing.</span>
       ${stale.some((c) => c.platform === 'instagram') ? html`<button class="btn btn-sm" onClick=${connectInstagram}>Reconnect Instagram</button>` : ''}
       ${stale.some((c) => c.platform === 'tiktok') ? html`<button class="btn btn-sm" onClick=${() => connect(true)}>Reconnect TikTok</button>` : ''}
+      ${stale.some((c) => c.platform === 'threads') ? html`<button class="btn btn-sm" onClick=${connectThreads}>Reconnect Threads</button>` : ''}
     </div>` : '';
     return html`<div class="section-gap" style=${{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', fontSize: '12.5px' }}>
       <span class="muted">Numbers update every morning · last updated ${whenText} · ${conns.length} account${conns.length === 1 ? '' : 's'}</span>
@@ -148,6 +174,7 @@ export function TikTokConnect({ onSynced }) {
           · ${link(igConns.length ? 'Connect another Instagram account' : 'Connect Instagram', connectInstagram)}
           · ${link('reconnect TikTok', () => connect(true), 'Sign in again to a connected TikTok account')}
           ${igConns.length ? html` · ${link('reconnect Instagram', connectInstagram)}` : ''}
+          · ${link(thConns.length ? 'reconnect Threads' : 'Connect Threads', connectThreads)}
         </div>
       </div>` : ''}
       ${staleWarn}

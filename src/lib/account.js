@@ -17,8 +17,8 @@ export const PER_ACCOUNT_KEYS = [
   'serigama.targets',
 ];
 
-export const SOCIAL_PLATFORMS = ['tiktok', 'instagram'];
-export const PLATFORM_NAME = { tiktok: 'TikTok', instagram: 'Instagram' };
+export const SOCIAL_PLATFORMS = ['tiktok', 'instagram', 'threads'];
+export const PLATFORM_NAME = { tiktok: 'TikTok', instagram: 'Instagram', threads: 'Threads' };
 
 // One colour per connected account (by its order in the switcher), used to tell
 // accounts apart in the "All accounts" calendar.
@@ -37,7 +37,7 @@ let activeId = null;
 // top, serigama.daily in the centre, serigama.intern at the bottom. Within a brand,
 // Instagram before TikTok; anything else after, oldest first.
 const BRAND_ORDER = ['hq', 'daily', 'intern'];
-const DISPLAY_ORDER = ['instagram', 'tiktok'];
+const DISPLAY_ORDER = ['instagram', 'threads', 'tiktok'];
 const brandRank = (a) => {
   const h = String(a.handle || a.display_name || '').toLowerCase().replace(/[^a-z]/g, '');
   const i = BRAND_ORDER.findIndex((b) => h.endsWith(b));
@@ -77,9 +77,10 @@ export const loadedAccounts = () => list;
 // "from TikTok Studio" vs "from Instagram".
 export const activePlatform = () => ((list.find((a) => a.id === activeId) || {}).platform) || 'tiktok';
 export const isInstagram = () => activePlatform() === 'instagram';
+export const isThreads = () => activePlatform() === 'threads';
 // Where the manually-captured / insight figures come from, for labels.
-export const insightSource = () => (isInstagram() ? 'Instagram' : 'Studio');
-export const studioName = () => (isInstagram() ? 'Instagram' : 'TikTok Studio');
+export const insightSource = () => (isInstagram() ? 'Instagram' : isThreads() ? 'Threads' : 'Studio');
+export const studioName = () => (isInstagram() ? 'Instagram' : isThreads() ? 'Threads' : 'TikTok Studio');
 
 // The account a row belongs to. Rows tagged with an account outside the switcher,
 // or untagged (manual plans, old syncs), count as the primary account's.
