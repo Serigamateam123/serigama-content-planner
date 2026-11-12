@@ -34,8 +34,9 @@ export function similarity(a, b) {
 export function findPlanMatches(contents, accountOf) {
   const linked = (c) => !!(c.plan_title || c.notion_id || c.hook || c.pillar);
   const posts = contents.filter((c) => c.external_id && c.status === 'published' && c.published_at && !linked(c));
-  // Trial reels are left out: Instagram doesn't sync them, so a same-day feed post isn't theirs.
-  const plans = contents.filter((c) => !c.external_id && !c.trial && PLAN_STATUSES.includes(c.status) && c.scheduled_at);
+  // Trial reels are included: Instagram syncs them like any reel, and the plan's
+  // "Trial reel" tick (a PLAN_FIELD) moves onto the synced reel with the rest.
+  const plans = contents.filter((c) => !c.external_id && PLAN_STATUSES.includes(c.status) && c.scheduled_at);
   const pairs = [];
   const usedPost = new Set(), usedPlan = new Set();
   const candidates = [];
