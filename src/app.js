@@ -272,7 +272,12 @@ function App() {
       <button class="btn" onClick=${async () => { await store.signOut(); setSession(null); }}>Sign out</button>
     </div>`;
   }
-  const contents = all.contents.filter((c) => accountOf(c) === accountId);
+  // Threads replies (format 'reply') are the account's comments on other people's
+  // threads: they only appear in Post Performance's Replies section, never in the
+  // calendar, dashboard or post counts.
+  const isReply = (c) => c.format === 'reply';
+  const contents = all.contents.filter((c) => accountOf(c) === accountId && !isReply(c));
+  const replies = all.contents.filter((c) => accountOf(c) === accountId && isReply(c));
   const ids = new Set(contents.map((c) => c.id));
   const metricsHistory = all.metricsHistory.filter((m) => ids.has(m.content_id));
   const accountStats = all.accountStats.filter((s) => accountOf(s) === accountId);
@@ -286,7 +291,7 @@ function App() {
   };
   const socialIds = new Set(socialAccounts(accounts).map((a) => a.id));
   const allCalendar = calScope === 'all' && socialIds.size > 1;
-  const calendarContents = allCalendar ? all.contents.filter((c) => socialIds.has(accountOf(c))) : contents;
+  const calendarContents = allCalendar ? all.contents.filter((c) => socialIds.has(accountOf(c)) && !isReply(c)) : contents;
   const accountTag = (c) => {
     const a = accounts.find((x) => x.id === accountOf(c));
     return a ? { id: a.id, label: '@' + (a.handle || a.display_name), color: accountColor(a.id, accounts) } : null;
@@ -351,7 +356,7 @@ function App() {
               onNavigate=${navigate} onRefresh=${loadData} />`
           : page === 'targets'
           ? html`<${Targets} contents=${contents} metricsHistory=${metricsHistory} />`
-          : html`<${Analytics} contents=${contents} accounts=${accounts} accountStats=${accountStats} metricsHistory=${metricsHistory} onSaveMetrics=${saveMetrics} />`}
+          : html`<${Analytics} contents=${contents} replies=${replies} accounts=${accounts} accountStats=${accountStats} metricsHistory=${metricsHistory} onSaveMetrics=${saveMetrics} />`}
       </div>
     </main>
 

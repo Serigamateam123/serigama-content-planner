@@ -6,7 +6,7 @@ import { TrendChart } from './TrendChart.js';
 import { TikTokConnect } from './TikTokConnect.js';
 import { analytics, compact, withThousands, erOf, engagementOf, periodMetrics, daysOfHistory, applyFilters, engagementExtras, ceilingFloor } from '../lib/metrics.js';
 import { readKV } from '../lib/kv.js';
-import { insightSource, isInstagram } from '../lib/account.js';
+import { insightSource, isInstagram, isThreads } from '../lib/account.js';
 
 // Unicode-block sparkline from a list of numbers (shared by monthly + engagement).
 function sparkline(vals) {
@@ -43,7 +43,7 @@ const RANGE_PRESETS = [
   { key: 'all', label: 'All time' },
 ];
 
-export function Analytics({ contents, accounts, accountStats, metricsHistory, onSaveMetrics }) {
+export function Analytics({ contents, replies = [], accounts, accountStats, metricsHistory, onSaveMetrics }) {
   const DEFAULTS = { funnel: 'all', account_id: 'all', platform: 'all', hashtag: '', from: dayKey(startOfMonth(new Date())), to: dayKey(new Date()), grain: 'monthly', preset: 'month' };
   // `f` = the filters currently APPLIED to the results. `draft` = what the user is
   // editing in the filter bar. Nothing filters until they press Search (setF(draft)).
@@ -200,6 +200,10 @@ export function Analytics({ contents, accounts, accountStats, metricsHistory, on
     ` : ''}
 
     ${isInstagram() ? html`<${InstagramSplit} posts=${a.published} />` : ''}
+    ${isThreads() ? html`<${ThreadsSplit} posts=${a.published} replies=${replies.filter((c) => {
+      const d = c.published_at ? dayKey(new Date(c.published_at)) : '';
+      return (!f.from || d >= f.from) && (!f.to || d <= f.to);
+    })} />` : ''}
 
     ${showEntry
       ? html`<${MetricsEntry} contents=${publishedAll} onSave=${onSaveMetrics} />`
@@ -365,6 +369,57 @@ function IgPlayer({ post, onClose }) {
           style=${{ border: 0, width: '100%', height: 'min(760px, calc(92vh - 50px))', background: '#fff' }}></iframe>`
         : html`<p class="muted" style=${{ padding: '20px', fontSize: '13px' }}>This post has no Instagram link to play.</p>`}
     </div>
+  </div>`;
+}
+
+// Threads only: the account's own posts, and its replies on other people's threads,
+// each with totals and a table. Per item Threads gives views, likes, replies, reposts,
+// quotes and shares (reposts/quotes/shares split kept in app_kv `serigama.threadsposts`).
+function ThreadsSplit({ posts, replies }) {
+  const [showAll, setShowAll] = useState({ posts: false, replies: false });
+  const extra = readKV('serigama.threadsposts', {}) || {};
+  const num = (v) => Number(v) || 0;
+  const m = (c, k) => num(c.metrics && c.metrics[k]);
+  const x = (c, k) => num((extra[String(c.external_id)] || {})[k]);
+  const reposts = (c) => (extra[String(c.external_id)] ? x(c, 'reposts') : m(c, 'shares'));
+  const quotes = (c) => x(c, 'quotes');
+  const shares = (c) => x(c, 'shares');
+  const sum = (list, fn) => list.reduce((n, c) => n + fn(c), 0);
+  const byViews = (list) => [...list].sort((p, q) => m(q, 'views') - m(p, 'views'));
+  const clip = (t) => { t = (t || '').trim().split('\n')[0] || '(no text)'; return t.length > 60 ? t.slice(0, 60) + '…' : t; };
+  const day = (c) => (c.published_at ? new Date(c.published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—');
+  const ths = (list) => list.filter((c) => c.platform === 'threads');
+  const tile = (color, label, value) => html`<div class="kpi" style=${{ borderTop: '3px solid ' + color, boxShadow: 'none', padding: '12px 14px' }}>
+    <div class="kpi-label">${label}</div><div class="kpi-value" style=${{ fontSize: '22px' }}>${value}</div></div>`;
+  const section = (key, icon, title, note, list) => {
+    const rows = byViews(list).slice(0, showAll[key] ? undefined : 10);
+    return html`<div class="card card-pad section-gap">
+      <div class="card-title">${icon} ${title} <span class="muted" style=${{ fontWeight: 400 }}>(${list.length} in this range)</span></div>
+      <p class="muted" style=${{ fontSize: '12px', margin: '4px 0 0' }}>${note}</p>
+      ${list.length ? html`
+        <div class="kpi-row" style=${{ gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', margin: '10px 0' }}>
+          ${tile('#6366f1', '👁 Views', compact(sum(list, (c) => m(c, 'views'))))}
+          ${tile('#ec4899', '❤️ Likes', compact(sum(list, (c) => m(c, 'likes'))))}
+          ${tile('#3b82f6', '💬 Replies', compact(sum(list, (c) => m(c, 'comments'))))}
+          ${tile('#22c55e', '🔁 Reposts', compact(sum(list, reposts)))}
+          ${tile('#f59e0b', '❝ Quotes', compact(sum(list, quotes)))}
+          ${tile('#0ea5e9', '↗ Shares', compact(sum(list, shares)))}
+        </div>
+        <div style=${{ overflowX: 'auto' }}><table class="atable">
+          <thead><tr><th>${key === 'replies' ? 'Reply' : 'Post'}</th><th>Date</th><th>Views</th><th>Likes</th><th>Replies</th><th>Reposts</th><th>Quotes</th><th>Shares</th></tr></thead>
+          <tbody>${rows.map((c) => html`<tr>
+            <td class="atable-title" style=${{ minWidth: '220px' }}>${c.post_url ? html`<a href=${c.post_url} target="_blank" rel="noopener">${clip(c.title)}</a>` : clip(c.title)}</td>
+            <td>${day(c)}</td><td>${compact(m(c, 'views'))}</td><td>${compact(m(c, 'likes'))}</td><td>${compact(m(c, 'comments'))}</td>
+            <td>${compact(reposts(c))}</td><td>${compact(quotes(c))}</td><td>${compact(shares(c))}</td>
+          </tr>`)}</tbody>
+        </table></div>
+        ${list.length > 10 ? html`<button class="btn btn-ghost btn-sm" style=${{ marginTop: '6px' }} onClick=${() => setShowAll((s) => ({ ...s, [key]: !s[key] }))}>${showAll[key] ? 'Show top 10' : `Show all ${list.length}`}</button>` : ''}`
+        : html`<p class="muted" style=${{ fontSize: '12.5px', margin: '8px 0 0' }}>None in this range.</p>`}
+    </div>`;
+  };
+  return html`<div>
+    ${section('posts', '🧵', 'Threads posts', 'Your own threads.', ths(posts))}
+    ${section('replies', '↪️', 'Replies', "Your replies on other people's threads — each has its own views and likes. Click one to open it on Threads.", ths(replies))}
   </div>`;
 }
 

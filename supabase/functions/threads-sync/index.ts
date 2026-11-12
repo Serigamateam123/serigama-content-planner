@@ -120,6 +120,22 @@ async function syncOne(row: any) {
     next = j.paging?.next && after ? `me/threads?fields=id,media_product_type,media_type,permalink,text,timestamp,shortcode,is_quote_post&limit=100&after=${after}` : "";
   }
 
+  // 2b) The account's replies on other people's threads (needs threads_read_replies).
+  //     Saved with format 'reply' so the planner keeps them out of the calendar and post counts.
+  const postIds = new Set(posts.map((p) => String(p.id)));
+  try {
+    const RF = "id,text,timestamp,permalink,media_type,is_reply";
+    let rnext = `me/replies?fields=${RF}&limit=100`;
+    let n = 0;
+    for (let page = 0; rnext && page < 30; page++) {
+      const j = await graph(rnext, token);
+      for (const r of j.data || []) if (!postIds.has(String(r.id))) { posts.push({ ...r, __reply: true }); n++; }
+      const after = j.paging?.cursors?.after;
+      rnext = j.paging?.next && after ? `me/replies?fields=${RF}&limit=100&after=${after}` : "";
+    }
+    result.replies = n;
+  } catch (e) { result.repliesError = String(e).slice(0, 160); }
+
   const { data: known } = await sb.from("contents").select("external_id").eq("user_id", uid).eq("platform", "threads");
   const seen = new Set((known || []).map((c: any) => String(c.external_id)));
   const cutoff = Date.now() - FULL_INSIGHTS_DAYS * 86400000;
@@ -142,10 +158,10 @@ async function syncOne(row: any) {
       const text = String(p.text || "").trim();
       return {
         user_id: uid, platform: "threads", account_id: accountId, external_id: String(p.id),
-        title: (text || (p.media_type === "REPOST_FACADE" ? "(Repost)" : "(Threads post)")).slice(0, 300),
+        title: (text || (p.media_type === "REPOST_FACADE" ? "(Repost)" : p.__reply ? "(Reply)" : "(Threads post)")).slice(0, 300),
         status: "published", published_at: ts, scheduled_at: ts, post_url: p.permalink || "",
         has_final_caption: true,
-        format: p.media_type === "VIDEO" ? "video" : p.media_type === "CAROUSEL_ALBUM" ? "carousel" : "feed",
+        format: p.__reply ? "reply" : p.media_type === "VIDEO" ? "video" : p.media_type === "CAROUSEL_ALBUM" ? "carousel" : "feed",
       };
     }), { onConflict: "user_id,platform,external_id" }).select("id, external_id");
     if (error) throw error;
@@ -155,7 +171,7 @@ async function syncOne(row: any) {
       const views = n.views || 0, likes = n.likes || 0, comments = n.replies || 0;
       const shares = (n.reposts || 0) + (n.quotes || 0) + (n.shares || 0);
       const engagement = likes + comments + shares;
-      extra[String(p.id)] = { reposts: n.reposts || 0, quotes: n.quotes || 0, shares: n.shares || 0, replies: comments };
+      extra[String(p.id)] = { reposts: n.reposts || 0, quotes: n.quotes || 0, shares: n.shares || 0, replies: comments, ...(p.__reply ? { kind: "reply" } : {}) };
       return {
         content_id: idOf.get(String(p.id)), user_id: uid, views, likes, comments, shares, reach: 0,
         engagement, engagement_rate: views ? Math.round((engagement / views) * 1000) / 10 : 0,
@@ -168,7 +184,7 @@ async function syncOne(row: any) {
     const all = (await kvGet(uid, "serigama.threadsposts")) || {};
     await kvSet(uid, "serigama.threadsposts", { ...all, ...extra });
   }
-  result.posts = posts.length;
+  result.posts = posts.filter((p) => !p.__reply).length;
   result.pulled = todo.length;
 
   // 4) Account views this month and last (Malaysia time, whole days up to yesterday).

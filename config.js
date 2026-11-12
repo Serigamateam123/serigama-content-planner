@@ -42,7 +42,7 @@ window.PLANNER_CONFIG = {
   // own app ID). Read-only scopes. Non-secret — THREADS_APP_SECRET lives only in Supabase.
   threads: {
     appId: '1447493470865177',
-    scopes: 'threads_basic,threads_manage_insights',
+    scopes: 'threads_basic,threads_manage_insights,threads_read_replies',
     redirectUri: 'https://acfscrvvlzjtbsxturkx.supabase.co/functions/v1/threads-callback',
     authorizeUrl: 'https://threads.net/oauth/authorize',
   },
