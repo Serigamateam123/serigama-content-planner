@@ -159,8 +159,9 @@ key is no longer read.
 ## 5b-2. Threads @serigamahq (connected 2026-11-12, fully automatic)
 
 - Same Meta app, use case **Access the Threads API** (own Threads app ID 1447493470865177;
-  read-only `threads_basic` + `threads_manage_insights`). Redirect / uninstall / delete callback
+  read-only `threads_basic` + `threads_manage_insights` + `threads_read_replies`). Redirect / uninstall / delete callback
   URLs point at `threads-callback`. @serigamahq is a **Threads Tester** (app in development mode).
+- **Replies** (since 2026-11-12): threads-sync also pulls `me/replies` (the account's replies on other people's threads), saves them as contents with `format: 'reply'` (kept out of the calendar and post counts) and shows them in their own "Replies" section in Post Performance, with views/likes/replies/reposts/quotes/shares each.
 - Supabase secret `THREADS_APP_SECRET` (copy it only after clicking **Show** on Meta — the masked
   ●●●● value fails with "Invalid client_secret"). `threads-callback` and `threads-sync` have
   verify_jwt **off**; cron `threads-daily-sync` at 22:10 UTC (6:10 AM MYT), `supabase/cron_threads_sync.sql`.

@@ -348,10 +348,14 @@ function InstagramSplit({ posts }) {
 }
 
 // Pop-up player for one Instagram post, using Instagram's own embed page.
+// Also used for Threads posts and replies (Threads' own embed page).
 function IgPlayer({ post, onClose }) {
-  const m = String(post.post_url || '').match(/instagram\.com\/(reel|reels|p|tv)\/([^/?#]+)/);
+  const url = String(post.post_url || '');
+  const th = url.match(/threads\.(?:net|com)\/(@[^/]+)\/post\/([^/?#]+)/);
+  const m = url.match(/instagram\.com\/(reel|reels|p|tv)\/([^/?#]+)/);
   const kind = m && m[1] === 'p' ? 'p' : 'reel';
-  const src = m ? `https://www.instagram.com/${kind}/${m[2]}/embed/` : null;
+  const src = th ? `https://www.threads.com/${th[1]}/post/${th[2]}/embed` : m ? `https://www.instagram.com/${kind}/${m[2]}/embed/` : null;
+  const app = th ? 'Threads' : 'Instagram';
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -362,12 +366,12 @@ function IgPlayer({ post, onClose }) {
     <div onClick=${(e) => e.stopPropagation()} style=${{ background: 'var(--surface, #fff)', borderRadius: '14px', overflow: 'hidden', width: 'min(420px, 100%)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.4)' }}>
       <div style=${{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px 8px 14px', borderBottom: '1px solid var(--border-2, #eee)' }}>
         <span style=${{ flex: 1, fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>${(post.title || '').split('\n')[0]}</span>
-        <a href=${post.post_url} target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style=${{ whiteSpace: 'nowrap' }}>Open in Instagram ↗</a>
+        <a href=${post.post_url} target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style=${{ whiteSpace: 'nowrap' }}>Open in ${app} ↗</a>
         <button type="button" class="btn btn-ghost btn-sm" onClick=${onClose} aria-label="Close" style=${{ fontSize: '16px', lineHeight: 1 }}>✕</button>
       </div>
-      ${src ? html`<iframe src=${src} title="Instagram post" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen
+      ${src ? html`<iframe src=${src} title=${app + ' post'} allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen
           style=${{ border: 0, width: '100%', height: 'min(760px, calc(92vh - 50px))', background: '#fff' }}></iframe>`
-        : html`<p class="muted" style=${{ padding: '20px', fontSize: '13px' }}>This post has no Instagram link to play.</p>`}
+        : html`<p class="muted" style=${{ padding: '20px', fontSize: '13px' }}>This post has no ${app} link to open.</p>`}
     </div>
   </div>`;
 }
@@ -377,6 +381,7 @@ function IgPlayer({ post, onClose }) {
 // quotes and shares (reposts/quotes/shares split kept in app_kv `serigama.threadsposts`).
 function ThreadsSplit({ posts, replies }) {
   const [showAll, setShowAll] = useState({ posts: false, replies: false });
+  const [open, setOpen] = useState(null);
   const extra = readKV('serigama.threadsposts', {}) || {};
   const num = (v) => Number(v) || 0;
   const m = (c, k) => num(c.metrics && c.metrics[k]);
@@ -408,7 +413,8 @@ function ThreadsSplit({ posts, replies }) {
         <div style=${{ overflowX: 'auto' }}><table class="atable">
           <thead><tr><th>${key === 'replies' ? 'Reply' : 'Post'}</th><th>Date</th><th>Views</th><th>Likes</th><th>Replies</th><th>Reposts</th><th>Quotes</th><th>Shares</th></tr></thead>
           <tbody>${rows.map((c) => html`<tr>
-            <td class="atable-title" style=${{ minWidth: '220px' }}>${c.post_url ? html`<a href=${c.post_url} target="_blank" rel="noopener">${clip(c.title)}</a>` : clip(c.title)}</td>
+            <td class="atable-title" style=${{ minWidth: '220px' }}><div style=${{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              ${c.post_url ? html`<button class="play-btn" title=${key === 'replies' ? 'View reply' : 'View post'} aria-label="View on Threads" onClick=${() => setOpen(c)}>▶</button>` : ''}<span>${clip(c.title)}</span></div></td>
             <td>${day(c)}</td><td>${compact(m(c, 'views'))}</td><td>${compact(m(c, 'likes'))}</td><td>${compact(m(c, 'comments'))}</td>
             <td>${compact(reposts(c))}</td><td>${compact(quotes(c))}</td><td>${compact(shares(c))}</td>
           </tr>`)}</tbody>
@@ -419,7 +425,8 @@ function ThreadsSplit({ posts, replies }) {
   };
   return html`<div>
     ${section('posts', '🧵', 'Threads posts', 'Your own threads.', ths(posts))}
-    ${section('replies', '↪️', 'Replies', "Your replies on other people's threads — each has its own views and likes. Click one to open it on Threads.", ths(replies))}
+    ${section('replies', '↪️', 'Replies', "Your replies on other people's threads — each has its own views and likes. Press ▶ to view one here.", ths(replies))}
+    ${open ? html`<${IgPlayer} post=${open} onClose=${() => setOpen(null)} />` : ''}
   </div>`;
 }
 
