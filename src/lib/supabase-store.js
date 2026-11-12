@@ -236,7 +236,7 @@ export function makeSupabaseStore(url, anonKey) {
     // --- auto-posting (supabase/publish.sql + Edge Function instagram-publish) ---
     async listPublishJobs() {
       const { data, error } = await sb.from('publish_jobs')
-        .select('id,content_id,account_id,kind,media_path,cover_path,caption,share_to_feed,trial,scheduled_at,status,permalink,error,attempts,updated_at');
+        .select('*');
       if (error) return []; // table not created yet
       return data || [];
     },

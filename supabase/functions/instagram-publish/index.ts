@@ -9,6 +9,9 @@
 //           the planner item becomes the posted reel (status, link, external_id, so
 //           the daily sync updates this same item) → the uploaded file is deleted.
 // Trial reels use trial_params.graduation_strategy (MANUAL or SS_PERFORMANCE).
+// "Also post to Story" (also_story): once the post is live, the same file goes up as a
+// Story (media_type STORIES — its own post; stories videos max 60 s). A Story problem
+// never undoes the post; it's noted in story_error. The file is deleted after both.
 //
 // Needs the Instagram connection to include instagram_content_publish (add it to the
 // Facebook Login for Business configuration, then Reconnect Instagram).
@@ -109,13 +112,62 @@ async function finish(job: any, ig: any, waitMs: number) {
     external_id: mediaId, platform: "instagram", has_final_caption: true,
     format: job.kind === "image" ? "feed" : "reel",
   }).eq("id", job.content_id);
-  await update(job.id, { status: "published", media_id: mediaId, permalink, error: null, lock_until: null });
-  await sb.storage.from(BUCKET).remove([job.media_path, job.cover_path].filter(Boolean));
+  // A trial reel never goes to Story: that would show it to followers.
+  if (job.also_story && !job.trial) {
+    await update(job.id, { status: "published", media_id: mediaId, permalink, error: null, story_status: "queued" });
+    job.status = "published"; job.story_status = "queued";
+    await runStory(job, ig); // same run if there's time; otherwise the next run finishes it
+  } else {
+    await update(job.id, { status: "published", media_id: mediaId, permalink, error: null, lock_until: null });
+    await sb.storage.from(BUCKET).remove([job.media_path, job.cover_path].filter(Boolean));
+  }
   return true;
+}
+
+// The Story copy of a published post. Returns when done or out of time.
+async function runStory(job: any, ig: any) {
+  const done = async (patch: Record<string, unknown>) => {
+    await update(job.id, { ...patch, lock_until: null });
+    await sb.storage.from(BUCKET).remove([job.media_path, job.cover_path].filter(Boolean));
+  };
+  try {
+    if (job.story_status === "queued") {
+      const p: Record<string, string> = { media_type: "STORIES" };
+      if (job.kind === "image") p.image_url = await signed(job.media_path);
+      else p.video_url = await signed(job.media_path);
+      const c = await graph("POST", `${ig.open_id}/media`, ig.access_token, p);
+      job.story_container_id = String(c.id); job.story_status = "processing";
+      await update(job.id, { story_status: "processing", story_container_id: job.story_container_id, story_error: null });
+    }
+    const deadline = Date.now() + 40000;
+    for (;;) {
+      const s = await graph("GET", `${job.story_container_id}?fields=status_code,status`, ig.access_token);
+      if (s.status_code === "FINISHED") break;
+      if (s.status_code === "ERROR" || s.status_code === "EXPIRED") {
+        await done({ story_status: "failed", story_error: `Instagram couldn't make the Story (${s.status || s.status_code}). Story videos must be 60 s or shorter.` });
+        return;
+      }
+      if (Date.now() > deadline) { await update(job.id, { lock_until: null }); return; }
+      await sleep(5000);
+    }
+    const pub = await graph("POST", `${ig.open_id}/media_publish`, ig.access_token, { creation_id: job.story_container_id });
+    await done({ story_status: "published", story_media_id: String(pub.id), story_error: null });
+  } catch (e) {
+    const msg = String((e as Error).message || e).slice(0, 300);
+    if (job.story_status === "processing" && Date.now() - new Date(job.scheduled_at).getTime() < 23 * 3600e3) {
+      await update(job.id, { story_error: msg, lock_until: null }); // try again next run
+    } else {
+      await done({ story_status: "failed", story_error: msg });
+    }
+  }
 }
 
 async function runJob(job: any) {
   if (!(await claim(job.id))) return { id: job.id, skipped: "busy" };
+  if (job.status === "published") { // only its Story is left
+    try { await runStory(job, await tokenFor(job)); } catch (e) { await update(job.id, { story_status: "failed", story_error: String(e).slice(0, 300), lock_until: null }); }
+    return { id: job.id, story: true };
+  }
   try {
     const ig = await tokenFor(job);
     if (job.status === "queued") {
@@ -162,8 +214,10 @@ Deno.serve(async (req) => {
       .in("status", ["queued", "processing"]).lte("scheduled_at", now())
       .order("scheduled_at").limit(10);
     if (error) throw error;
+    const { data: stories } = await sb.from("publish_jobs").select("*")
+      .eq("status", "published").in("story_status", ["queued", "processing"]).limit(10);
     const results = [];
-    for (const job of jobs || []) results.push(await runJob(job));
+    for (const job of [...(jobs || []), ...(stories || [])]) results.push(await runJob(job));
     return new Response(JSON.stringify({ ok: true, results }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });

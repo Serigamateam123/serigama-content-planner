@@ -62,3 +62,12 @@ create policy publish_media_rw on storage.objects
   with check (bucket_id = 'publish-media' and (
     (storage.foldername(name))[1] = auth.uid()::text
     or ((storage.foldername(name))[1] = (select public.my_team_owner())::text and (select public.my_team_role()) = 'full')));
+
+-- Also post to Story (2026-11-12): after the reel / photo is published, the same file
+-- goes up as a Story (its own post; the API can't add a "reel" sticker).
+alter table public.publish_jobs add column if not exists also_story boolean not null default false;
+alter table public.publish_jobs add column if not exists story_status text
+  check (story_status in ('queued', 'processing', 'published', 'failed'));
+alter table public.publish_jobs add column if not exists story_container_id text;
+alter table public.publish_jobs add column if not exists story_media_id text;
+alter table public.publish_jobs add column if not exists story_error text;

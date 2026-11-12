@@ -235,6 +235,9 @@ transaction acting as a calendar / full / removed member.
   (red "Post failed" badge).
 - Needs `instagram_content_publish` in the Facebook Login for Business configuration
   "Planner Instagram read" (Meta app 1784689132823597), then **Reconnect Instagram**.
+- **Also post it to my Story** (also_story): after the post is live, the same file is posted as a Story
+  (media_type STORIES; its own Story, not a reel-sticker share; Story videos max 60 s). Not for trial
+  reels. A Story failure never undoes the post (story_status / story_error on the job).
 - Dragging a card moves its queued post; unscheduling or unticking cancels it.
 - TikTok can't be auto-posted publicly until TikTok audits the app.
 

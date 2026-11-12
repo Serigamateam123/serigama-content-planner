@@ -51,6 +51,7 @@ export function ContentModal({ content, contents, allContents, accounts, default
     caption: job ? job.caption : (c.caption || ''),
     shareToFeed: job ? job.share_to_feed !== false : true,
     trialMode: (job && job.trial) || 'MANUAL',
+    story: job ? !!job.also_story : false,
   });
   const setA = (k) => (e) => {
     const t = e.target;
@@ -96,6 +97,7 @@ export function ContentModal({ content, contents, allContents, accounts, default
         publish = { action: 'save', old: job ? [ap.file ? job.media_path : null, (ap.file || ap.cover) ? job.cover_path : null] : [], job: {
           account_id: acct.id, platform: 'instagram', kind: isImage ? 'image' : 'reel', media_path, cover_path,
           caption: ap.caption || '', share_to_feed: !!ap.shareToFeed, trial: form.trial && !isImage ? ap.trialMode : null,
+          also_story: !!ap.story && !form.trial, story_status: null, story_container_id: null, story_media_id: null, story_error: null,
           scheduled_at, status: 'queued', container_id: null, media_id: null, error: null, attempts: 0, lock_until: null,
         } };
       } catch (e) { setErr('Upload failed: ' + ((e && e.message) || e)); setBusy(false); setBusyText(''); return; }
@@ -171,7 +173,10 @@ export function ContentModal({ content, contents, allContents, accounts, default
   const when = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '');
   const jobLine = () => {
     if (!job) return '';
-    if (job.status === 'published') return html`<div class="ap-status ap-ok">✅ Posted to Instagram${job.permalink ? html` · <a href=${job.permalink} target="_blank" rel="noopener">open ↗</a>` : ''}</div>`;
+    const story = !job.also_story ? '' : job.story_status === 'published' ? ' · Story ✓'
+      : job.story_status === 'failed' ? html` · <span style=${{ color: '#991b1b' }}>Story failed: ${job.story_error || ''}</span>`
+      : ' · Story posting…';
+    if (job.status === 'published') return html`<div class="ap-status ap-ok">✅ Posted to Instagram${job.permalink ? html` · <a href=${job.permalink} target="_blank" rel="noopener">open ↗</a>` : ''}${story}</div>`;
     if (job.status === 'processing') return html`<div class="ap-status ap-wait">⏳ Posting now. Instagram is processing the video…</div>`;
     if (job.status === 'failed') return html`<div class="ap-status ap-bad">⚠️ Couldn't post: ${job.error || 'unknown error'}<br/><span class="muted">Fix it and press Save to try again (pick a new time if this one has passed), or untick to post it yourself.</span></div>`;
     return html`<div class="ap-status ap-wait">⏱ Will post ${when(job.scheduled_at)}${job.error ? html` · last try: ${job.error}` : ''}</div>`;
@@ -206,6 +211,10 @@ export function ContentModal({ content, contents, allContents, accounts, default
           </select>
         </div>` : html`<label class="check" style=${{ marginBottom: '6px' }}>
           <input type="checkbox" checked=${ap.shareToFeed} onChange=${setA('shareToFeed')} /> Also show the reel on the profile grid
+        </label>`}
+        ${form.trial ? html`<div class="help" style=${{ marginBottom: '6px' }}>Trial reels aren't posted to Story (that would show them to your followers).</div>`
+          : html`<label class="check" style=${{ marginBottom: '6px' }}>
+          <input type="checkbox" checked=${ap.story} onChange=${setA('story')} /> Also post it to my Story <span class="muted">(right after it posts · Story videos max 60 s)</span>
         </label>`}
         <div class="help">It posts within 5 minutes of the scheduled time (Malaysia time). Tick “Trial reel” above to post it as a trial. The file is deleted from the planner once it's posted.</div>` : ''}
     </div>`;
