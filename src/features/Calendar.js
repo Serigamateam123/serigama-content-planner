@@ -101,7 +101,7 @@ export function Calendar({ contents, accounts = null, accountTag = null, scopeLa
     ...${dragProps(c)}
     onClick=${(e) => { e.stopPropagation(); onOpen(c); }}>
     <div class="t">${c.trial ? html`<span class="trial-tag">Trial reel</span> ` : ''}${c.title}</div>
-    <div class="m">${time(c.scheduled_at)} · ${tagEl(c) || _platformShort(c.platform)}${c.status ? html` <span class=${'st-pill st-' + c.status}>${_statusShort(c.status)}</span>` : ''}</div>
+    <div class="m">${time(c.scheduled_at)} · ${tagEl(c) || _platformShort(c.platform)}${c.status ? html` <span class=${'st-pill st-' + c.status}>${_statusShort(c.status)}</span>` : ''}${_jobPill(c.publishJob)}</div>
   </div>`;
 
   return html`<div>
@@ -214,4 +214,12 @@ function _platformShort(id) {
 
 function _statusShort(id) {
   return { idea: 'Idea', draft: 'Draft', scripting: 'Script', filming: 'Filming', editing: 'Editing', ready: 'Ready', scheduled: 'Scheduled', published: 'Posted', takedown: 'Taken down' }[id] || id;
+}
+
+// Auto-post state (supabase/publish.sql), shown next to the status badge.
+function _jobPill(j) {
+  if (!j || j.status === 'cancelled' || j.status === 'published') return '';
+  if (j.status === 'failed') return html` <span class="st-pill ap-pill-bad" title=${j.error || ''}>⚠ Post failed</span>`;
+  if (j.status === 'processing') return html` <span class="st-pill ap-pill">⏳ Posting</span>`;
+  return html` <span class="st-pill ap-pill" title="Posts to Instagram automatically">📤 Auto-post</span>`;
 }

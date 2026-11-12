@@ -1,0 +1,171 @@
+// Supabase Edge Function: instagram-publish
+// Posts planner items to Instagram at their scheduled time (Instagram Content
+// Publishing API, through the same connection instagram-sync uses). Runs every
+// 5 minutes (supabase/cron_publish.sql); it only acts on jobs the planner queued in
+// `publish_jobs` (supabase/publish.sql), so calling it can't post anything else.
+//
+// Per job:  queued & due → upload container (video/photo fetched by Instagram from a
+//           signed Storage link) → wait until Instagram has processed it → publish →
+//           the planner item becomes the posted reel (status, link, external_id, so
+//           the daily sync updates this same item) → the uploaded file is deleted.
+// Trial reels use trial_params.graduation_strategy (MANUAL or SS_PERFORMANCE).
+//
+// Needs the Instagram connection to include instagram_content_publish (add it to the
+// Facebook Login for Business configuration, then Reconnect Instagram).
+// verify_jwt must be OFF (pg_cron calls it with the publishable key).
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+
+const GRAPH = "https://graph.facebook.com/v25.0";
+const BUCKET = "publish-media";
+const LOCK_MS = 4 * 60 * 1000;
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+async function graph(method: "GET" | "POST", path: string, token: string, params: Record<string, string> = {}) {
+  const body = new URLSearchParams({ ...params, access_token: token });
+  const res = method === "GET"
+    ? await fetch(`${GRAPH}/${path}${path.includes("?") ? "&" : "?"}${body}`)
+    : await fetch(`${GRAPH}/${path}`, { method: "POST", body });
+  const json = await res.json();
+  if (json.error) throw new Error(json.error.error_user_msg || json.error.message || JSON.stringify(json.error));
+  return json;
+}
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const now = () => new Date().toISOString();
+
+async function update(id: string, patch: Record<string, unknown>) {
+  await sb.from("publish_jobs").update({ ...patch, updated_at: now() }).eq("id", id);
+}
+
+// Take a job for this run only (two overlapping runs must never post twice).
+async function claim(id: string) {
+  const until = new Date(Date.now() + LOCK_MS).toISOString();
+  const { data } = await sb.from("publish_jobs").update({ lock_until: until })
+    .eq("id", id).or(`lock_until.is.null,lock_until.lt.${now()}`).select("id");
+  return !!(data && data.length);
+}
+
+async function signed(path: string) {
+  const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, 24 * 3600);
+  if (error || !data?.signedUrl) throw new Error("Couldn't read the uploaded file: " + (error?.message || "missing"));
+  return data.signedUrl;
+}
+
+async function tokenFor(job: any) {
+  const { data } = await sb.from("integrations").select("open_id,access_token,display_name")
+    .eq("user_id", job.user_id).eq("platform", "instagram").eq("account_id", job.account_id).maybeSingle();
+  if (!data) throw new Error("This Instagram account isn't connected — reconnect it in Post Performance.");
+  return data;
+}
+
+async function createContainer(job: any, ig: any) {
+  const p: Record<string, string> = { caption: job.caption || "" };
+  if (job.kind === "image") {
+    p.image_url = await signed(job.media_path);
+  } else {
+    p.media_type = "REELS";
+    p.video_url = await signed(job.media_path);
+    p.share_to_feed = job.trial ? "false" : String(job.share_to_feed !== false);
+    if (job.cover_path) p.cover_url = await signed(job.cover_path);
+    if (job.trial) p.trial_params = JSON.stringify({ graduation_strategy: job.trial });
+  }
+  const j = await graph("POST", `${ig.open_id}/media`, ig.access_token, p);
+  return String(j.id);
+}
+
+// Container → published post. Returns true when done (published or failed).
+async function finish(job: any, ig: any, waitMs: number) {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const s = await graph("GET", `${job.container_id}?fields=status_code,status`, ig.access_token);
+    if (s.status_code === "FINISHED") break;
+    if (s.status_code === "ERROR" || s.status_code === "EXPIRED") {
+      await update(job.id, { status: "failed", error: `Instagram couldn't process the file (${s.status || s.status_code}). Check it's an MP4/MOV reel (3 s – 15 min) or a JPG photo.`, lock_until: null });
+      return true;
+    }
+    if (s.status_code === "PUBLISHED") break;
+    if (Date.now() > deadline) return false; // still processing — next run continues
+    await sleep(5000);
+  }
+  const pub = await graph("POST", `${ig.open_id}/media_publish`, ig.access_token, { creation_id: job.container_id });
+  const mediaId = String(pub.id);
+  let permalink = "", ts = now();
+  try {
+    const m = await graph("GET", `${mediaId}?fields=permalink,timestamp`, ig.access_token);
+    permalink = m.permalink || ""; ts = m.timestamp ? new Date(m.timestamp).toISOString() : ts;
+  } catch (_) { /* filled in by the next daily sync */ }
+
+  // If a sync already brought this post in as a separate item, drop that copy so the
+  // planner item (with its plan, label and notes) becomes the post.
+  await sb.from("contents").delete().eq("user_id", job.user_id).eq("platform", "instagram")
+    .eq("external_id", mediaId).neq("id", job.content_id);
+  await sb.from("contents").update({
+    status: "published", published_at: ts, scheduled_at: ts, post_url: permalink,
+    external_id: mediaId, platform: "instagram", has_final_caption: true,
+    format: job.kind === "image" ? "feed" : "reel",
+  }).eq("id", job.content_id);
+  await update(job.id, { status: "published", media_id: mediaId, permalink, error: null, lock_until: null });
+  await sb.storage.from(BUCKET).remove([job.media_path, job.cover_path].filter(Boolean));
+  return true;
+}
+
+async function runJob(job: any) {
+  if (!(await claim(job.id))) return { id: job.id, skipped: "busy" };
+  try {
+    const ig = await tokenFor(job);
+    if (job.status === "queued") {
+      const containerId = await createContainer(job, ig);
+      job.container_id = containerId;
+      job.status = "processing";
+      await update(job.id, { status: "processing", container_id: containerId, attempts: (job.attempts || 0) + 1, error: null });
+    } else if (Date.now() - new Date(job.scheduled_at).getTime() > 23 * 3600e3) {
+      await update(job.id, { status: "failed", error: "Instagram didn't finish processing the file within a day.", lock_until: null });
+      return { id: job.id, failed: true };
+    }
+    const done = await finish(job, ig, 40000);
+    if (!done) await update(job.id, { lock_until: null });
+    return { id: job.id, done };
+  } catch (e) {
+    const msg = String((e as Error).message || e).slice(0, 400);
+    const attempts = (job.attempts || 0) + (job.status === "queued" ? 1 : 0);
+    // A failed upload is retried on the next run (up to 3 tries); then it's marked failed.
+    // While processing, a hiccup just waits for the next run (the one-day limit above
+    // stops it eventually).
+    if (job.status === "processing") await update(job.id, { error: msg, lock_until: null });
+    else if (attempts < 3) await update(job.id, { attempts, error: msg, lock_until: null });
+    else await update(job.id, { status: "failed", attempts, error: msg, lock_until: null });
+    return { id: job.id, error: msg };
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  try {
+    // { probe: true } → read-only check that posting is allowed (posts nothing).
+    let probe = false;
+    try { probe = !!(await req.json())?.probe; } catch (_) { /* no body */ }
+    if (probe) {
+      const { data: rows } = await sb.from("integrations").select("open_id,access_token,display_name").eq("platform", "instagram");
+      const out: Record<string, unknown> = {};
+      for (const r of rows || []) {
+        try { out[r.display_name] = await graph("GET", `${r.open_id}/content_publishing_limit?fields=quota_usage,config`, r.access_token); }
+        catch (e) { out[r.display_name] = "ERR " + String((e as Error).message || e).slice(0, 200); }
+      }
+      return new Response(JSON.stringify({ ok: true, probe: out }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    const { data: jobs, error } = await sb.from("publish_jobs").select("*")
+      .in("status", ["queued", "processing"]).lte("scheduled_at", now())
+      .order("scheduled_at").limit(10);
+    if (error) throw error;
+    const results = [];
+    for (const job of jobs || []) results.push(await runJob(job));
+    return new Response(JSON.stringify({ ok: true, results }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  } catch (e) {
+    return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
+});

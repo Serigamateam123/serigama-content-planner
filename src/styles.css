@@ -632,3 +632,12 @@ button { font-family: inherit; }
 .st-pill.st-scheduled { background: #dbeafe; color: #1e40af; }
 .st-pill.st-published { background: #d1fae5; color: #065f46; }
 .st-pill.st-takedown { background: #fee2e2; color: #991b1b; }
+
+/* --- Auto-post to Instagram ---------------------------------------------- */
+.ap-box { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: #fafbff; }
+.ap-status { margin-top: 8px; padding: 7px 10px; border-radius: 8px; font-size: 12.5px; line-height: 1.5; }
+.ap-ok { background: #d1fae5; color: #065f46; }
+.ap-wait { background: #dbeafe; color: #1e3a8a; }
+.ap-bad { background: #fee2e2; color: #991b1b; }
+.st-pill.ap-pill { background: #ede9fe; color: #5b21b6; }
+.st-pill.ap-pill-bad { background: #dc2626; color: #fff; }

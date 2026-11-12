@@ -233,6 +233,41 @@ export function makeSupabaseStore(url, anonKey) {
       if (error) throw error;
       return { ok: true };
     },
+    // --- auto-posting (supabase/publish.sql + Edge Function instagram-publish) ---
+    async listPublishJobs() {
+      const { data, error } = await sb.from('publish_jobs')
+        .select('id,content_id,account_id,kind,media_path,cover_path,caption,share_to_feed,trial,scheduled_at,status,permalink,error,attempts,updated_at');
+      if (error) return []; // table not created yet
+      return data || [];
+    },
+    // Upload a video / photo for posting; returns its path in the private bucket.
+    async uploadPublishMedia(file) {
+      const ext = (String(file.name || '').match(/\.([a-z0-9]+)$/i) || [, 'bin'])[1].toLowerCase();
+      const path = `${requireUser()}/${crypto.randomUUID()}.${ext}`;
+      const { error } = await sb.storage.from('publish-media').upload(path, file, { contentType: file.type || undefined, upsert: false });
+      if (error) throw new Error(/exceeded|too large|size/i.test(error.message) ? 'That file is over 50 MB — export a smaller version and try again.' : error.message);
+      return path;
+    },
+    async removePublishMedia(paths) {
+      const list = (paths || []).filter(Boolean);
+      if (list.length) await sb.storage.from('publish-media').remove(list);
+    },
+    // One job per planner item: create, change, or re-queue it.
+    async savePublishJob(contentId, job) {
+      const row = { ...job, content_id: contentId, user_id: requireUser(), updated_at: new Date().toISOString() };
+      const { data, error } = await sb.from('publish_jobs').upsert(row, { onConflict: 'content_id' }).select().single();
+      if (error) throw error;
+      return data;
+    },
+    async cancelPublishJob(contentId) {
+      const { error } = await sb.from('publish_jobs').update({ status: 'cancelled', updated_at: new Date().toISOString() })
+        .eq('content_id', contentId).in('status', ['queued', 'failed']);
+      if (error) throw error;
+    },
+    async runPublisher() {
+      try { await sb.functions.invoke('instagram-publish', { body: {} }); } catch (e) { /* the 5-minute run will do it */ }
+    },
+
     async saveMetrics(id, metrics) {
       const { error } = await sb.from('content_metrics').insert({
         content_id: id,

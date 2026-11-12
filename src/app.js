@@ -153,14 +153,16 @@ function App() {
     setTeam(ctx);
     // Saved figures (app_kv → localStorage) download alongside the tables; nothing
     // below reads them until all of it has arrived.
-    const [, contents, accounts, accountStats, metricsHistory, studioMetrics] = await Promise.all([
+    const [, contents, accounts, accountStats, metricsHistory, studioMetrics, publishJobs] = await Promise.all([
       syncKV(ctx.role),
       store.listContents(),
       store.listAccounts(),
       store.listAccountStats(),
       store.listMetricsHistory(),
       store.listStudioMetrics(),
+      store.listPublishJobs && ctx.role !== 'calendar' ? store.listPublishJobs() : [],
     ]);
+    const jobBy = new Map((publishJobs || []).filter((j) => j.status !== 'cancelled').map((j) => [j.content_id, j]));
     const studioBy = new Map((studioMetrics || []).map((s) => [String(s.external_id), s]));
     let savesBy = {};
     let newFollowersBy = {};
@@ -170,6 +172,7 @@ function App() {
     const withStudio = contents.map((c) => ({
       ...c,
       ...(metaBy[c.id] || {}),
+      publishJob: jobBy.get(c.id) || null,
       studio: c.external_id ? studioBy.get(String(c.external_id)) || null : null,
       saves: c.external_id ? Number(savesBy[String(c.external_id)]) || 0 : 0,
       newFollowers: c.external_id && newFollowersBy[String(c.external_id)] != null ? Number(newFollowersBy[String(c.external_id)]) : null,
@@ -220,17 +223,31 @@ function App() {
   // Throws on failure so the form can show the error and keep what was typed.
   const saveContent = async (patch, id) => {
     const row = { ...patch };
+    const publish = row._publish;
+    delete row._publish;
     const meta = {};
     for (const k of META_FIELDS) { if (k in row) { meta[k] = row[k]; delete row[k]; } }
     let contentId = id;
     if (id) await store.updateContent(id, row);
     else contentId = (await store.createContent(row)).id;
     await updateKVEntry(META_KEY, contentId, meta);
+    // Auto-posting job for this item (features/ContentModal.js → supabase/publish.sql).
+    if (publish && publish.action === 'save') {
+      await store.savePublishJob(contentId, { ...publish.job, created_by: (team && team.email) || null });
+      try { await store.removePublishMedia(publish.old); } catch (e) { /* leftover file is harmless */ }
+      // Due now (or in the past)? Don't wait for the 5-minute run.
+      if (new Date(publish.job.scheduled_at).getTime() <= Date.now() + 60000) store.runPublisher();
+    } else if (publish && publish.action === 'cancel') {
+      await store.cancelPublishJob(contentId);
+      try { await store.removePublishMedia(publish.old); } catch (e) { /* harmless */ }
+    }
     setModal(null);
     await loadData();
   };
   const deleteContent = async (id) => {
+    const j = (all.contents.find((c) => c.id === id) || {}).publishJob;
     await store.deleteContent(id);
+    if (j && j.status !== 'published' && store.removePublishMedia) { try { await store.removePublishMedia([j.media_path, j.cover_path]); } catch (e) { /* harmless */ } }
     try { await updateKVEntry(META_KEY, id, null); } catch (e) { /* orphaned meta is harmless */ }
     setModal(null);
     await loadData();
@@ -243,6 +260,12 @@ function App() {
     setData((d) => ({ ...d, contents: d.contents.map((c) => (c.id === id ? { ...c, scheduled_at: scheduledAt } : c)) }));
     try {
       await store.updateContent(id, { scheduled_at: scheduledAt });
+      // A queued auto-post follows the card to its new day (or stops if unscheduled).
+      const j = (all.contents.find((c) => c.id === id) || {}).publishJob;
+      if (j && j.status === 'queued') {
+        if (scheduledAt) await store.savePublishJob(id, { ...j, scheduled_at: scheduledAt, error: null });
+        else await store.cancelPublishJob(id);
+      }
       setTimeout(() => { if (recentMoves.current.get(id) === scheduledAt) recentMoves.current.delete(id); }, 60000);
     } catch (e) {
       recentMoves.current.delete(id);
@@ -382,6 +405,8 @@ function App() {
           contents=${contents}
           allContents=${all.contents}
           accounts=${accounts}
+          canAutopost=${isCloud && role !== 'calendar' && !!store.savePublishJob}
+          uploadMedia=${(f) => store.uploadPublishMedia(f)}
           onSubmit=${saveContent}
           onDelete=${deleteContent}
           onClose=${() => setModal(null)}

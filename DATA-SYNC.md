@@ -118,6 +118,8 @@ key is no longer read.
 
 ## 5b. Instagram (fully automatic — no Thursday capture)
 
+- Trial reels: Instagram DOES sync them (like any reel) but doesn't flag them; tick **Trial reel** on the synced item (red label + Trial reels section in Post Performance).
+
 - Connected through **Facebook Login for Business** (Meta app "Serigama Content Planner",
   ID 1784689132823597, login configuration 1422746343402021 — read-only permissions:
   instagram_basic, instagram_manage_insights, pages_show_list, pages_read_engagement,
@@ -217,6 +219,24 @@ owner's data (`dataOwnerId` in `supabase-store.js`). Tested 2026-11-11 with a ro
 transaction acting as a calendar / full / removed member.
 
 ---
+
+## 5f. Auto-posting to Instagram (2026-11-12)
+
+- In the content form (Instagram items, owner + Full members): tick **Post to Instagram
+  automatically**, upload the video (MP4/MOV) or photo (JPG), max 50 MB, write the caption,
+  set the date/time. Tick **Trial reel** to post it as a trial (choose MANUAL or
+  SS_PERFORMANCE graduation).
+- Pieces: table `publish_jobs` + private Storage bucket `publish-media`
+  (`supabase/publish.sql`); Edge Function `instagram-publish` (verify_jwt OFF), run every
+  5 minutes by pg_cron (`supabase/cron_publish.sql`). Flow: queued → container
+  (signed 24 h link) → processing → `media_publish` → the planner item becomes the post
+  (status, link, `external_id`, so instagram-sync updates the same item) → file deleted.
+  Upload failures retry 3×; processing gives up after a day. Errors show on the item
+  (red "Post failed" badge).
+- Needs `instagram_content_publish` in the Facebook Login for Business configuration
+  "Planner Instagram read" (Meta app 1784689132823597), then **Reconnect Instagram**.
+- Dragging a card moves its queued post; unscheduling or unticking cancels it.
+- TikTok can't be auto-posted publicly until TikTok audits the app.
 
 ## 6. Known limits (by design, not bugs)
 

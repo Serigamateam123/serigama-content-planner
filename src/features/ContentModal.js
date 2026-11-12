@@ -19,7 +19,7 @@ const usedValues = (contents, key, extra = []) =>
 
 // Add / edit a piece of content. `content` is null when creating; `prefill` seeds a
 // new post (e.g. "Plan a post" from a Content Funnel inspo clip).
-export function ContentModal({ content, contents, allContents, accounts, defaultDate, prefill, onSubmit, onDelete, onClose }) {
+export function ContentModal({ content, contents, allContents, accounts, defaultDate, prefill, canAutopost, uploadMedia, onSubmit, onDelete, onClose }) {
   const c = content || prefill || {};
   const [form, setForm] = useState({
     title: c.title || '',
@@ -41,6 +41,24 @@ export function ContentModal({ content, contents, allContents, accounts, default
     inspo2: c.inspo2 || '',
     trial: !!c.trial,
   });
+  // Auto-posting to Instagram (supabase/publish.sql). `job` is this item's posting job.
+  const job = content && content.publishJob && content.publishJob.status !== 'cancelled' ? content.publishJob : null;
+  const jobLocked = !!job && (job.status === 'published' || job.status === 'processing');
+  const [ap, setAp] = useState({
+    on: !!job,
+    file: null,
+    cover: null,
+    caption: job ? job.caption : (c.caption || ''),
+    shareToFeed: job ? job.share_to_feed !== false : true,
+    trialMode: (job && job.trial) || 'MANUAL',
+  });
+  const setA = (k) => (e) => {
+    const t = e.target;
+    const v = t.type === 'checkbox' ? t.checked : t.type === 'file' ? (t.files && t.files[0]) || null : t.value;
+    setAp((a) => ({ ...a, [k]: v }));
+  };
+  const [busyText, setBusyText] = useState('');
+  const isImg = (f) => /^image\//.test((f && f.type) || '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -58,9 +76,34 @@ export function ContentModal({ content, contents, allContents, accounts, default
       const twin = (allContents || contents || []).find((x) => x.external_id && x.id !== (content && content.id) && code(x.post_url) === code(form.post_url));
       if (twin) { setErr(`Instagram already synced this reel: “${(twin.title || '').slice(0, 50)}”. Cancel this, open that post in the calendar and tick “Trial reel” there instead, so it isn't counted twice.`); return; }
     }
+    const scheduled_at = fromDatetimeLocal(form.scheduled_local);
+    const acct = (accounts || []).find((a) => a.id === form.account_id);
+    const autopost = canAutopost && form.platform === 'instagram' && ap.on && !jobLocked;
+    let publish = null;
+    if (autopost) {
+      if (!acct || acct.platform !== 'instagram') { setErr('To post automatically, set Account to your Instagram account.'); return; }
+      if (!scheduled_at) { setErr('To post automatically, pick the date and time to post.'); return; }
+      if (!ap.file && !(job && job.media_path)) { setErr('Choose the video (MP4 / MOV) or photo (JPG) to post.'); return; }
+      const isImage = ap.file ? isImg(ap.file) : job.kind === 'image';
+      if (ap.file && !/^(video\/(mp4|quicktime)|image\/jpe?g)$/.test(ap.file.type)) { setErr('Instagram takes MP4 / MOV videos and JPG photos only.'); return; }
+      if (ap.file && ap.file.size > 50 * 1024 * 1024) { setErr('That file is over 50 MB. Export a smaller version (1080p, under 50 MB) and try again.'); return; }
+      if (isImage && form.trial) { setErr('Trial reels must be videos.'); return; }
+      setBusy(true); setErr('');
+      try {
+        setBusyText(ap.file ? 'Uploading… (a big video can take a minute)' : 'Saving…');
+        const media_path = ap.file ? await uploadMedia(ap.file) : job.media_path;
+        const cover_path = !isImage && ap.cover ? await uploadMedia(ap.cover) : (job && !ap.file ? job.cover_path : null);
+        publish = { action: 'save', old: job ? [ap.file ? job.media_path : null, (ap.file || ap.cover) ? job.cover_path : null] : [], job: {
+          account_id: acct.id, platform: 'instagram', kind: isImage ? 'image' : 'reel', media_path, cover_path,
+          caption: ap.caption || '', share_to_feed: !!ap.shareToFeed, trial: form.trial && !isImage ? ap.trialMode : null,
+          scheduled_at, status: 'queued', container_id: null, media_id: null, error: null, attempts: 0, lock_until: null,
+        } };
+      } catch (e) { setErr('Upload failed: ' + ((e && e.message) || e)); setBusy(false); setBusyText(''); return; }
+    } else if (job && !jobLocked && !ap.on) {
+      publish = { action: 'cancel', old: [job.media_path, job.cover_path] };
+    }
     setBusy(true);
     setErr('');
-    const scheduled_at = fromDatetimeLocal(form.scheduled_local);
     const prev = content || {};
     const patch = {
       title: form.title.trim(),
@@ -85,12 +128,18 @@ export function ContentModal({ content, contents, allContents, accounts, default
       inspo2: inspoHref(form.inspo2) || form.inspo2.trim(),
       trial: form.trial ? true : '',
     };
+    if (publish) patch._publish = publish;
+    if (publish && publish.action === 'save') {
+      if (!['published', 'takedown'].includes(form.status)) patch.status = 'scheduled';
+      patch.published_at = null;
+    }
     try {
       await onSubmit(patch, content ? content.id : null);
     } catch (e) {
       setErr('Could not save — ' + ((e && e.message) || 'please check your connection and try again.'));
     }
     setBusy(false);
+    setBusyText('');
   };
 
   const footer = html`
@@ -102,7 +151,7 @@ export function ContentModal({ content, contents, allContents, accounts, default
     <div style=${{ display: 'flex', gap: '8px' }}>
       <button class="btn" onClick=${onClose}>Cancel</button>
       <button class="btn btn-gold" onClick=${submit} disabled=${busy}>
-        ${busy ? 'Saving…' : content ? 'Save changes' : 'Add content'}
+        ${busy ? busyText || 'Saving…' : content ? 'Save changes' : 'Add content'}
       </button>
     </div>`;
 
@@ -118,6 +167,48 @@ export function ContentModal({ content, contents, allContents, accounts, default
       </div>
     </div>`;
   };
+
+  const when = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '');
+  const jobLine = () => {
+    if (!job) return '';
+    if (job.status === 'published') return html`<div class="ap-status ap-ok">✅ Posted to Instagram${job.permalink ? html` · <a href=${job.permalink} target="_blank" rel="noopener">open ↗</a>` : ''}</div>`;
+    if (job.status === 'processing') return html`<div class="ap-status ap-wait">⏳ Posting now. Instagram is processing the video…</div>`;
+    if (job.status === 'failed') return html`<div class="ap-status ap-bad">⚠️ Couldn't post: ${job.error || 'unknown error'}<br/><span class="muted">Fix it and press Save to try again (pick a new time if this one has passed), or untick to post it yourself.</span></div>`;
+    return html`<div class="ap-status ap-wait">⏱ Will post ${when(job.scheduled_at)}${job.error ? html` · last try: ${job.error}` : ''}</div>`;
+  };
+  const showCover = !(ap.file ? isImg(ap.file) : job && job.kind === 'image');
+  const autopostBox = () => html`<div class="field ap-box">
+      <label class="check">
+        <input type="checkbox" checked=${ap.on || jobLocked} disabled=${jobLocked} onChange=${setA('on')} />
+        <span><strong>📤 Post to Instagram automatically</strong> at the scheduled date & time</span>
+      </label>
+      ${jobLine()}
+      ${ap.on && !jobLocked ? html`
+        <div class="field" style=${{ marginTop: '10px' }}>
+          <label>Video (MP4 / MOV) or photo (JPG) · max 50 MB</label>
+          <input type="file" accept="video/mp4,video/quicktime,image/jpeg" onChange=${setA('file')} />
+          ${!ap.file && job && job.media_path ? html`<div class="help">Already uploaded (${job.kind === 'image' ? 'photo' : 'video'}). Choose a file only to replace it.</div>` : ''}
+        </div>
+        ${showCover ? html`<div class="field">
+          <label>Cover image (optional, JPG)</label>
+          <input type="file" accept="image/jpeg" onChange=${setA('cover')} />
+          ${!ap.cover && job && job.cover_path && !ap.file ? html`<div class="help">Cover already uploaded.</div>` : ''}
+        </div>` : ''}
+        <div class="field">
+          <label>Caption to post</label>
+          <textarea rows="4" value=${ap.caption} onInput=${setA('caption')} placeholder="The caption that goes on Instagram, with hashtags"></textarea>
+        </div>
+        ${form.trial ? html`<div class="field">
+          <label><span class="trial-tag">Trial reel</span> After the trial</label>
+          <select value=${ap.trialMode} onChange=${setA('trialMode')}>
+            <option value="MANUAL">Keep it a trial (I'll share it to followers myself)</option>
+            <option value="SS_PERFORMANCE">Share to followers automatically if it does well</option>
+          </select>
+        </div>` : html`<label class="check" style=${{ marginBottom: '6px' }}>
+          <input type="checkbox" checked=${ap.shareToFeed} onChange=${setA('shareToFeed')} /> Also show the reel on the profile grid
+        </label>`}
+        <div class="help">It posts within 5 minutes of the scheduled time (Malaysia time). Tick “Trial reel” above to post it as a trial. The file is deleted from the planner once it's posted.</div>` : ''}
+    </div>`;
 
   return html`<${Modal} title=${content ? 'Edit content' : 'New content'} onClose=${onClose} footer=${footer}>
     ${err ? html`<div class="toast toast-err" style=${{ marginBottom: '12px' }}>${err}</div>` : ''}
@@ -225,6 +316,8 @@ export function ContentModal({ content, contents, allContents, accounts, default
       </label>
       ${form.trial ? html`<div class="help">Instagram syncs trial reels like normal reels, with their numbers, but doesn't say which ones are trials. So once the sync brings the reel in, open it in the calendar and tick this box. (Only add a trial reel by hand if it hasn't synced yet.)</div>` : ''}
     </div>
+
+    ${canAutopost && form.platform === 'instagram' ? autopostBox() : ''}
 
     <div class="field">
       <label>Post link (once published)</label>
