@@ -301,7 +301,10 @@ function InstagramSplit({ posts, trials = [] }) {
         </tr>`)}</tbody>
       </table></div>
       <p class="muted" style=${{ fontSize: '11px', margin: '8px 0 0' }}>Instagram doesn't send trial reels to the planner while they're trials, so their numbers are typed in from the Instagram app. Once a trial reel is shared to your followers, the daily sync takes over its numbers and it keeps this label.</p>
-    </div>` : '';
+    </div>` : html`<div class="card card-pad section-gap" style=${{ borderLeft: '4px solid #dc2626' }}>
+      <div class="card-title"><span class="trial-tag">Trial reels</span> <span class="muted" style=${{ fontWeight: 400 }}>(none in this range)</span></div>
+      <p class="muted" style=${{ fontSize: '12.5px', margin: '6px 0 0', lineHeight: 1.6 }}>To show a trial reel here: in the Content Calendar, add it (or open its idea) → Status <strong>Published</strong>, Platform <strong>Instagram</strong>, Format <strong>Reel</strong> → tick <span class="trial-tag">Trial reel</span> → paste its link → Save. Then press <strong>Update numbers</strong> above and type its views, likes, comments and shares from the Instagram app.</p>
+    </div>`;
 
   return html`<div>
     ${trialSection}
