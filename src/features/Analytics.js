@@ -279,8 +279,8 @@ function InstagramSplit({ posts, trials = [] }) {
   const feedRows = byViews(feed).slice(0, showAll.feed ? undefined : 10);
   const reelRows = byViews(reels).slice(0, showAll.reels ? undefined : 10);
 
-  // Trial reels: Instagram's API leaves them out until they're shared to followers, so
-  // until then they're planner items ticked "Trial reel" with numbers typed in by hand.
+  // Trial reels: Instagram syncs them like any reel but doesn't flag them, so they're
+  // the reels ticked "Trial reel" in the planner (or added by hand before they sync).
   const trialRows = [...trials].sort((x, y) => views(y) - views(x));
   const hasNums = (c) => !!c.metrics;
   const trialSection = trials.length ? html`<div class="card card-pad section-gap" style=${{ borderLeft: '4px solid #dc2626' }}>
@@ -291,19 +291,19 @@ function InstagramSplit({ posts, trials = [] }) {
         ${tile('#ec4899', '❤️ Likes', compact(sum(trials.filter(hasNums), (c) => num(c.metrics.likes))))}
         ${tile('#3b82f6', '💬 Comments', compact(sum(trials.filter(hasNums), (c) => num(c.metrics.comments))))}
         ${tile('#22c55e', '🔁 Shares', compact(sum(trials.filter(hasNums), (c) => num(c.metrics.shares))))}
-        ${tile('#0f7a4d', '✅ Shared to followers', trials.filter((c) => c.external_id).length)}`)}
+        ${tile('#0ea5e9', '👥 Reach', compact(sum(trials.filter(hasNums), (c) => num(c.metrics.reach))))}`)}
       <div style=${{ overflowX: 'auto' }}><table class="atable">
-        <thead><tr><th>Reel</th><th>Date</th><th>Status</th><th>Views</th><th>Reach</th><th>Likes</th><th>Comments</th><th>Shares</th></tr></thead>
+        <thead><tr><th>Reel</th><th>Date</th><th>Numbers</th><th>Views</th><th>Reach</th><th>Likes</th><th>Comments</th><th>Shares</th></tr></thead>
         <tbody>${trialRows.map((c) => html`<tr>${titleCell(c)}<td>${day(c.published_at ? c : { published_at: c.scheduled_at })}</td>
-          <td>${c.external_id ? html`<span style=${{ color: '#0f7a4d', fontWeight: 600 }}>Shared to followers</span>` : html`<span style=${{ color: '#dc2626', fontWeight: 600 }}>Still a trial</span>`}</td>
+          <td>${c.external_id ? html`<span style=${{ color: '#0f7a4d', fontWeight: 600 }}>From Instagram</span>` : html`<span style=${{ color: '#b7791f', fontWeight: 600 }}>Typed in</span>`}</td>
           ${hasNums(c) ? html`<td>${compact(views(c))}</td><td>${compact(num(c.metrics.reach))}</td><td>${compact(num(c.metrics.likes))}</td><td>${compact(num(c.metrics.comments))}</td><td>${compact(num(c.metrics.shares))}</td>`
             : html`<td colspan="5" class="muted" style=${{ fontSize: '12px' }}>Numbers not typed in yet — Update numbers ↑</td>`}
         </tr>`)}</tbody>
       </table></div>
-      <p class="muted" style=${{ fontSize: '11px', margin: '8px 0 0' }}>Instagram doesn't send trial reels to the planner while they're trials, so their numbers are typed in from the Instagram app. Once a trial reel is shared to your followers, the daily sync takes over its numbers and it keeps this label.</p>
+      <p class="muted" style=${{ fontSize: '11px', margin: '8px 0 0' }}>Trial reels are shown to non-followers first. Instagram syncs them with their numbers like any reel, but doesn't say which ones are trials — so they're the reels you've ticked “Trial reel” in the calendar.</p>
     </div>` : html`<div class="card card-pad section-gap" style=${{ borderLeft: '4px solid #dc2626' }}>
       <div class="card-title"><span class="trial-tag">Trial reels</span> <span class="muted" style=${{ fontWeight: 400 }}>(none in this range)</span></div>
-      <p class="muted" style=${{ fontSize: '12.5px', margin: '6px 0 0', lineHeight: 1.6 }}>To show a trial reel here: in the Content Calendar, add it (or open its idea) → Status <strong>Published</strong>, Platform <strong>Instagram</strong>, Format <strong>Reel</strong> → tick <span class="trial-tag">Trial reel</span> → paste its link → Save. Then press <strong>Update numbers</strong> above and type its views, likes, comments and shares from the Instagram app.</p>
+      <p class="muted" style=${{ fontSize: '12.5px', margin: '6px 0 0', lineHeight: 1.6 }}>To show a trial reel here: after the sync brings it in (every morning, or press <strong>Refresh</strong>), open it in the Content Calendar → tick <span class="trial-tag">Trial reel</span> → Save. Its numbers come from Instagram automatically.</p>
     </div>`;
 
   return html`<div>

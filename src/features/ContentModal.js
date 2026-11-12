@@ -56,7 +56,7 @@ export function ContentModal({ content, contents, allContents, accounts, default
     const code = (u) => { const m = String(u || '').match(/instagram\.com\/(?:[^/]+\/)?(?:reels?|p|tv)\/([A-Za-z0-9_-]+)/); return m ? m[1] : null; };
     if (form.trial && !(content && content.external_id) && code(form.post_url)) {
       const twin = (allContents || contents || []).find((x) => x.external_id && x.id !== (content && content.id) && code(x.post_url) === code(form.post_url));
-      if (twin) { setErr(`That link is your posted reel “${(twin.title || '').slice(0, 50)}”, not the trial reel. In the Instagram app, open the trial reel → ⋯ → Copy link, and paste that instead (or leave the link empty).`); return; }
+      if (twin) { setErr(`Instagram already synced this reel: “${(twin.title || '').slice(0, 50)}”. Cancel this, open that post in the calendar and tick “Trial reel” there instead, so it isn't counted twice.`); return; }
     }
     setBusy(true);
     setErr('');
@@ -223,7 +223,7 @@ export function ContentModal({ content, contents, allContents, accounts, default
         <input type="checkbox" checked=${form.trial} onChange=${set('trial')} />
         <span><span class="trial-tag">Trial reel</span> Posted as an Instagram trial reel (shown to non-followers first)</span>
       </label>
-      ${form.trial ? html`<div class="help">Instagram doesn't send trial reels to the planner until they're shared to your followers. Paste the reel's link below and type its numbers in Post Performance → Update numbers so it shows in the report.</div>` : ''}
+      ${form.trial ? html`<div class="help">Instagram syncs trial reels like normal reels, with their numbers, but doesn't say which ones are trials. So once the sync brings the reel in, open it in the calendar and tick this box. (Only add a trial reel by hand if it hasn't synced yet.)</div>` : ''}
     </div>
 
     <div class="field">
