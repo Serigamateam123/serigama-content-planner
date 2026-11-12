@@ -101,7 +101,7 @@ export function Calendar({ contents, accounts = null, accountTag = null, scopeLa
     ...${dragProps(c)}
     onClick=${(e) => { e.stopPropagation(); onOpen(c); }}>
     <div class="t">${c.trial ? html`<span class="trial-tag">Trial reel</span> ` : ''}${c.title}</div>
-    <div class="m">${time(c.scheduled_at)} · ${tagEl(c) || _platformShort(c.platform)}${c.status !== 'scheduled' ? html` · <span class=${'st st-' + c.status}>${_statusShort(c.status)}</span>` : ''}</div>
+    <div class="m">${time(c.scheduled_at)} · ${tagEl(c) || _platformShort(c.platform)}${c.status ? html` <span class=${'st-pill st-' + c.status}>${_statusShort(c.status)}</span>` : ''}</div>
   </div>`;
 
   return html`<div>
@@ -213,5 +213,5 @@ function _platformShort(id) {
 }
 
 function _statusShort(id) {
-  return { idea: 'Idea', draft: 'Draft', scripting: 'Script', filming: 'Filming', editing: 'Editing', ready: 'Ready', published: 'Posted', takedown: 'Taken down' }[id] || id;
+  return { idea: 'Idea', draft: 'Draft', scripting: 'Script', filming: 'Filming', editing: 'Editing', ready: 'Ready', scheduled: 'Scheduled', published: 'Posted', takedown: 'Taken down' }[id] || id;
 }

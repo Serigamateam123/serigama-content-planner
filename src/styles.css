@@ -621,3 +621,14 @@ button { font-family: inherit; }
 
 /* --- Trial reel label (Instagram trial reels) ---------------------------- */
 .trial-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; line-height: 1.5; vertical-align: 1px; white-space: nowrap; }
+
+/* --- Status badge on calendar items --------------------------------------- */
+.st-pill { display: inline-block; margin-left: 2px; padding: 0 6px; border-radius: 999px; font-size: 10px; font-weight: 700; line-height: 1.6; white-space: nowrap; vertical-align: 1px; background: #eef1f8; color: var(--muted); }
+.st-pill.st-idea, .st-pill.st-draft { background: #fef3c7; color: #92400e; }
+.st-pill.st-scripting { background: #f3e8ff; color: #6b21a8; }
+.st-pill.st-filming { background: #fce7f3; color: #9d174d; }
+.st-pill.st-editing { background: #e0f2fe; color: #075985; }
+.st-pill.st-ready { background: #dcfce7; color: #166534; }
+.st-pill.st-scheduled { background: #dbeafe; color: #1e40af; }
+.st-pill.st-published { background: #d1fae5; color: #065f46; }
+.st-pill.st-takedown { background: #fee2e2; color: #991b1b; }
