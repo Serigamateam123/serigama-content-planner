@@ -4,6 +4,7 @@ import { Modal } from '../components/ui.js';
 import { PLATFORMS, STATUSES, FORMATS, FUNNELS, PILLAR_SUGGESTIONS } from '../lib/constants.js';
 import { toDatetimeLocal, fromDatetimeLocal } from '../lib/date.js';
 import { activeAccountId } from '../lib/account.js';
+import { igCode } from '../lib/reconcile.js';
 
 // An inspo link as a clickable URL (adds https:// to "vt.tiktok.com/…"), or null.
 const inspoHref = (v) => {
@@ -44,6 +45,8 @@ export function ContentModal({ content, contents, allContents, accounts, default
   // Auto-posting to Instagram (supabase/publish.sql). `job` is this item's posting job.
   const job = content && content.publishJob && content.publishJob.status !== 'cancelled' ? content.publishJob : null;
   const jobLocked = !!job && (job.status === 'published' || job.status === 'processing');
+  // Auto-post is for items not on Instagram yet (a synced post would be posted twice).
+  const canAp = canAutopost && !(content && content.external_id && !job);
   const [ap, setAp] = useState({
     on: !!job,
     file: null,
@@ -72,14 +75,14 @@ export function ContentModal({ content, contents, allContents, accounts, default
     if (!form.title.trim()) { setErr('Give the post a title first.'); return; }
     // A trial reel's link must be its own: if it's the link of a post Instagram already
     // synced, saving would fold the trial into that post (lib/reconcile.js).
-    const code = (u) => { const m = String(u || '').match(/instagram\.com\/(?:[^/]+\/)?(?:reels?|p|tv)\/([A-Za-z0-9_-]+)/); return m ? m[1] : null; };
+    const code = igCode;
     if (form.trial && !(content && content.external_id) && code(form.post_url)) {
       const twin = (allContents || contents || []).find((x) => x.external_id && x.id !== (content && content.id) && code(x.post_url) === code(form.post_url));
       if (twin) { setErr(`Instagram already synced this reel: “${(twin.title || '').slice(0, 50)}”. Cancel this, open that post in the calendar and tick “Trial reel” there instead, so it isn't counted twice.`); return; }
     }
     const scheduled_at = fromDatetimeLocal(form.scheduled_local);
     const acct = (accounts || []).find((a) => a.id === form.account_id);
-    const autopost = canAutopost && form.platform === 'instagram' && ap.on && !jobLocked;
+    const autopost = canAp && form.platform === 'instagram' && ap.on && !jobLocked;
     let publish = null;
     if (autopost) {
       if (!acct || acct.platform !== 'instagram') { setErr('To post automatically, set Account to your Instagram account.'); return; }
@@ -326,7 +329,7 @@ export function ContentModal({ content, contents, allContents, accounts, default
       ${form.trial ? html`<div class="help">Instagram syncs trial reels like normal reels, with their numbers, but doesn't say which ones are trials. So once the sync brings the reel in, open it in the calendar and tick this box. (Only add a trial reel by hand if it hasn't synced yet.)</div>` : ''}
     </div>
 
-    ${canAutopost && form.platform === 'instagram' ? autopostBox() : ''}
+    ${canAp && form.platform === 'instagram' ? autopostBox() : ''}
 
     <div class="field">
       <label>Post link (once published)</label>

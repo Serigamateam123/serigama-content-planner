@@ -81,9 +81,20 @@ async function createContainer(job: any, ig: any) {
   return String(j.id);
 }
 
+// The post a PUBLISHED container became: the newest post since the scheduled time
+// with the same caption (or simply the newest one since then).
+async function findPosted(job: any, ig: any) {
+  const j = await graph("GET", `${ig.open_id}/media?fields=id,caption,timestamp&limit=10`, ig.access_token);
+  const since = new Date(job.scheduled_at).getTime() - 10 * 60e3;
+  const recent = (j.data || []).filter((m: any) => new Date(m.timestamp).getTime() >= since);
+  const same = recent.find((m: any) => (m.caption || "") === (job.caption || ""));
+  return String((same || recent[0] || {}).id || "");
+}
+
 // Container → published post. Returns true when done (published or failed).
 async function finish(job: any, ig: any, waitMs: number) {
   const deadline = Date.now() + waitMs;
+  let already = false;
   for (;;) {
     const s = await graph("GET", `${job.container_id}?fields=status_code,status`, ig.access_token);
     if (s.status_code === "FINISHED") break;
@@ -91,12 +102,18 @@ async function finish(job: any, ig: any, waitMs: number) {
       await update(job.id, { status: "failed", error: `Instagram couldn't process the file (${s.status || s.status_code}). Check it's an MP4/MOV reel (3 s – 15 min) or a JPG photo.`, lock_until: null });
       return true;
     }
-    if (s.status_code === "PUBLISHED") break;
+    if (s.status_code === "PUBLISHED") { already = true; break; }
     if (Date.now() > deadline) return false; // still processing — next run continues
     await sleep(5000);
   }
-  const pub = await graph("POST", `${ig.open_id}/media_publish`, ig.access_token, { creation_id: job.container_id });
-  const mediaId = String(pub.id);
+  let mediaId = "";
+  if (already) {
+    mediaId = await findPosted(job, ig);
+    if (!mediaId) throw new Error("Posted on Instagram, but couldn't find the post yet; will check again.");
+  } else {
+    const pub = await graph("POST", `${ig.open_id}/media_publish`, ig.access_token, { creation_id: job.container_id });
+    mediaId = String(pub.id);
+  }
   let permalink = "", ts = now();
   try {
     const m = await graph("GET", `${mediaId}?fields=permalink,timestamp`, ig.access_token);
@@ -105,13 +122,20 @@ async function finish(job: any, ig: any, waitMs: number) {
 
   // If a sync already brought this post in as a separate item, drop that copy so the
   // planner item (with its plan, label and notes) becomes the post.
-  await sb.from("contents").delete().eq("user_id", job.user_id).eq("platform", "instagram")
-    .eq("external_id", mediaId).neq("id", job.content_id);
-  await sb.from("contents").update({
+  const posted = {
     status: "published", published_at: ts, scheduled_at: ts, post_url: permalink,
     external_id: mediaId, platform: "instagram", has_final_caption: true,
     format: job.kind === "image" ? "feed" : "reel",
-  }).eq("id", job.content_id);
+  };
+  let saveErr: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await sb.from("contents").delete().eq("user_id", job.user_id).eq("platform", "instagram")
+      .eq("external_id", mediaId).neq("id", job.content_id);
+    const { error } = await sb.from("contents").update(posted).eq("id", job.content_id);
+    saveErr = error;
+    if (!error) break;
+  }
+  if (saveErr) console.error("instagram-publish: couldn't update planner item", job.content_id, saveErr);
   // A trial reel never goes to Story: that would show it to followers.
   if (job.also_story && !job.trial) {
     await update(job.id, { status: "published", media_id: mediaId, permalink, error: null, story_status: "queued" });
@@ -169,6 +193,16 @@ async function runJob(job: any) {
     return { id: job.id, story: true };
   }
   try {
+    if (job.status === "queued") {
+      const { data: item } = await sb.from("contents").select("scheduled_at").eq("id", job.content_id).maybeSingle();
+      if (!item) { await update(job.id, { status: "cancelled", error: "The planner item was deleted.", lock_until: null }); return { id: job.id, cancelled: true }; }
+      if (!item.scheduled_at) { await update(job.id, { status: "cancelled", error: "The planner item was unscheduled.", lock_until: null }); return { id: job.id, cancelled: true }; }
+      const moved = Math.abs(new Date(item.scheduled_at).getTime() - new Date(job.scheduled_at).getTime()) > 60e3;
+      if (moved) {
+        await update(job.id, { scheduled_at: item.scheduled_at, lock_until: null });
+        if (new Date(item.scheduled_at).getTime() > Date.now()) return { id: job.id, moved: item.scheduled_at };
+      }
+    }
     const ig = await tokenFor(job);
     if (job.status === "queued") {
       const containerId = await createContainer(job, ig);
@@ -217,7 +251,11 @@ Deno.serve(async (req) => {
     const { data: stories } = await sb.from("publish_jobs").select("*")
       .eq("status", "published").in("story_status", ["queued", "processing"]).limit(10);
     const results = [];
-    for (const job of [...(jobs || []), ...(stories || [])]) results.push(await runJob(job));
+    const started = Date.now();
+    for (const job of [...(jobs || []), ...(stories || [])]) {
+      if (Date.now() - started > 60000) { results.push({ id: job.id, later: true }); continue; } // next run (5 min)
+      results.push(await runJob(job));
+    }
     return new Response(JSON.stringify({ ok: true, results }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });

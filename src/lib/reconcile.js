@@ -36,7 +36,10 @@ export function findPlanMatches(contents, accountOf) {
   const posts = contents.filter((c) => c.external_id && c.status === 'published' && c.published_at && !linked(c));
   // Trial reels are included: Instagram syncs them like any reel, and the plan's
   // "Trial reel" tick (a PLAN_FIELD) moves onto the synced reel with the rest.
-  const plans = contents.filter((c) => !c.external_id && PLAN_STATUSES.includes(c.status) && c.scheduled_at);
+  // Items waiting to auto-post are left out: they become the post themselves
+  // (instagram-publish), and merging one away would delete its posting job.
+  const autoPosting = (c) => c.publishJob && ['queued', 'processing', 'failed'].includes(c.publishJob.status);
+  const plans = contents.filter((c) => !c.external_id && !autoPosting(c) && PLAN_STATUSES.includes(c.status) && c.scheduled_at);
   const pairs = [];
   const usedPost = new Set(), usedPlan = new Set();
   const candidates = [];
@@ -89,7 +92,7 @@ export async function applyPlanMatches(pairs, meta, store) {
 // Once the sync brings in the same reel (same shortcode in the link), the hand-made
 // item is folded into the synced one — the label and plan fields move across — and
 // the hand-made item is removed, so the reel isn't counted twice.
-const igCode = (u) => { const m = String(u || '').match(/instagram\.com\/(?:[^/]+\/)?(?:reels?|p|tv)\/([A-Za-z0-9_-]+)/); return m ? m[1] : null; };
+export const igCode = (u) => { const m = String(u || '').match(/instagram\.com\/(?:[^/]+\/)?(?:reels?|p|tv)\/([A-Za-z0-9_-]+)/); return m ? m[1] : null; };
 export function findTrialMatches(contents) {
   const synced = new Map();
   for (const c of contents) if (c.external_id && c.platform === 'instagram' && igCode(c.post_url)) synced.set(igCode(c.post_url), c);

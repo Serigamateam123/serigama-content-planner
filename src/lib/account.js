@@ -19,6 +19,7 @@ export const PER_ACCOUNT_KEYS = [
 
 export const SOCIAL_PLATFORMS = ['tiktok', 'instagram', 'threads'];
 export const PLATFORM_NAME = { tiktok: 'TikTok', instagram: 'Instagram', threads: 'Threads' };
+export const PLATFORM_SHORT = { tiktok: 'TikTok', instagram: 'IG', youtube: 'YouTube', facebook: 'FB', threads: 'Threads' };
 
 // One colour per connected account (by its order in the switcher), used to tell
 // accounts apart in the "All accounts" calendar.

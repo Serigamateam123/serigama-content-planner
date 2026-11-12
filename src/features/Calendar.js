@@ -1,6 +1,7 @@
 import { html } from '../lib/html.js';
 import { useRemembered } from '../lib/remember.js';
 import { useState, useEffect } from 'preact/hooks';
+import { PLATFORM_SHORT } from '../lib/account.js';
 import { Icon, Platform, Badge } from '../components/ui.js';
 import { PLATFORMS, STATUSES, FUNNELS } from '../lib/constants.js';
 import { monthMatrix, monthYear, isSameDay, isSameMonth, dayKey, time, addDays, startOfWeek, parse } from '../lib/date.js';
@@ -209,7 +210,7 @@ export function Calendar({ contents, accounts = null, accountTag = null, scopeLa
 }
 
 function _platformShort(id) {
-  return { tiktok: 'TikTok', instagram: 'IG', youtube: 'YouTube', facebook: 'FB', threads: 'Threads' }[id] || id;
+  return PLATFORM_SHORT[id] || id;
 }
 
 function _statusShort(id) {

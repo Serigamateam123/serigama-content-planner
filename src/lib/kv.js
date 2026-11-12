@@ -23,6 +23,18 @@ export async function writeKV(key, value) {
   if (isCloud) await store.setKV(k, json);
 }
 
+// The cloud copy of a key (falls back to this browser's copy). Read it right before a
+// read-modify-write of a whole map, so another device's recent edits aren't overwritten.
+export async function readKVFresh(key, fallback = null) {
+  const local = readKV(key, fallback);
+  if (!isCloud) return local;
+  try {
+    const remote = await store.getKV();
+    const raw = remote[kvKey(key)];
+    return raw != null ? JSON.parse(raw) || fallback : local;
+  } catch (e) { return local; }
+}
+
 // Merge-update one entry of a map-shaped key ({ [id]: {...} }). Re-reads the cloud
 // copy first so an edit on one device can't wipe entries added on another.
 // `patch` null removes the entry.

@@ -200,7 +200,7 @@ export function Analytics({ contents, replies = [], accounts, accountStats, metr
     ` : ''}
 
     ${isInstagram() ? html`<${InstagramSplit} posts=${a.published} trials=${contents.filter((c) => {
-      if (!c.trial || c.platform !== 'instagram') return false;
+      if (!c.trial || c.platform !== 'instagram' || c.status !== 'published') return false;
       const at = c.published_at || c.scheduled_at; const d = at ? dayKey(new Date(at)) : '';
       return (!f.from || d >= f.from) && (!f.to || d <= f.to);
     })} />` : ''}
@@ -667,7 +667,7 @@ function FollowerCard({ fg, gains, posts, onClose }) {
           : "TikTok doesn't report unfollows. It can only be worked out when these videos brought more follows than you have followers now — here most followers came from older videos or before Studio figures were captured, so the gap is hidden."}</p>` : ''}
       ${perPost.map((r) => html`<div style=${{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', fontSize: '12.5px', padding: '5px 0', borderTop: '1px solid var(--border-2)' }}>
         <span style=${{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', minWidth: 0 }}>
-          ${tiktokId(r.c) ? html`<button class="play-btn" title="Play video" onClick=${() => setPlaying(r.c)}>▶</button>` : ''}
+          ${canPlay(r.c) ? html`<button class="play-btn" title="Play" onClick=${() => setPlaying(r.c)}>▶</button>` : ''}
           ${r.c.post_url ? html`<a href=${r.c.post_url} target="_blank" rel="noopener" style=${{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>${clip(r.c.title)}</a>` : html`<span style=${{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>${clip(r.c.title)}</span>`}
         </span>
         <strong style=${{ color: '#0f7a4d', whiteSpace: 'nowrap' }}>+${withThousands(r.g)}</strong>
@@ -720,7 +720,7 @@ function FollowerCard({ fg, gains, posts, onClose }) {
         <div class="muted" style=${{ fontSize: '11px', marginTop: '8px' }}>ℹ️ TikTok only breaks audience location down to <strong>country</strong>, not city — so city-level data isn't available here.</div>
       </div>`;
     })() : ''}
-    ${playing ? html`<${VideoModal} video=${playing} onClose=${() => setPlaying(null)} />` : ''}
+    ${playing ? html`<${PostPlayer} post=${playing} onClose=${() => setPlaying(null)} />` : ''}
   </div>`;
 }
 
@@ -1056,7 +1056,7 @@ function CeilingFloorChart({ rows }) {
 function videoNameCell(c, setPlaying) {
   const label = c.title || '(untitled)';
   return html`<td>
-    ${tiktokId(c) ? html`<button class="play-btn" title="Play video" onClick=${() => setPlaying(c)}>▶</button>` : ''}
+    ${canPlay(c) ? html`<button class="play-btn" title="Play" onClick=${() => setPlaying(c)}>▶</button>` : ''}
     ${c.post_url ? html`<a href=${c.post_url} target="_blank" rel="noopener">${label}</a>` : label}
   </td>`;
 }
@@ -1174,7 +1174,7 @@ function KpiDetail({ kind, a, rangeMode, history, onClose }) {
       const eclip = (t) => { t = (t || '(untitled)').trim(); return t.length > 38 ? t.slice(0, 38) + '…' : t; };
       const miniRow = (c, right) => html`<div style=${{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', fontSize: '12.5px', padding: '3px 0' }}>
         <span style=${{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', minWidth: 0 }}>
-          ${tiktokId(c) ? html`<button class="play-btn" title="Play video" onClick=${() => setPlaying(c)}>▶</button>` : ''}
+          ${canPlay(c) ? html`<button class="play-btn" title="Play" onClick=${() => setPlaying(c)}>▶</button>` : ''}
           <span style=${{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>${c.post_url ? html`<a href=${c.post_url} target="_blank" rel="noopener">${eclip(c.title)}</a>` : eclip(c.title)}</span>
         </span>
         <strong style=${{ whiteSpace: 'nowrap' }}>${right}</strong>
@@ -1324,7 +1324,7 @@ function KpiDetail({ kind, a, rangeMode, history, onClose }) {
           <div class="note" style=${{ color: 'var(--muted)' }}>Colour: <strong style=${{ color: '#0f7a4d' }}>▲ good</strong> · <strong style=${{ color: '#b7791f' }}>● okay</strong> · <strong style=${{ color: '#b4232a' }}>▼ needs work</strong>. Hover a number for the full note. Only videos you've captured from Studio show these.</div>
         </div>`
       : ''}
-    ${playing ? html`<${VideoModal} video=${playing} onClose=${() => setPlaying(null)} />` : ''}
+    ${playing ? html`<${PostPlayer} post=${playing} onClose=${() => setPlaying(null)} />` : ''}
   </div>`;
 }
 
@@ -1372,15 +1372,26 @@ function StudioCard({ published }) {
       <div class="note">➕ <strong>New followers</strong> — followed because of this video. ~<strong style=${{ color: '#0f7a4d' }}>0.1%+ of viewers</strong> is a good conversion.</div>
       <div class="note" style=${{ color: 'var(--muted)' }}>Colour key: <strong style=${{ color: '#0f7a4d' }}>▲ good</strong> · <strong style=${{ color: '#b7791f' }}>● okay</strong> · <strong style=${{ color: '#b4232a' }}>▼ needs work</strong>. Hover a number for its full note.</div>
     </div>
-    ${playing ? html`<${VideoModal} video=${playing} onClose=${() => setPlaying(null)} />` : ''}
+    ${playing ? html`<${PostPlayer} post=${playing} onClose=${() => setPlaying(null)} />` : ''}
   </div>`;
 }
 
 // The numeric TikTok video id, from external_id or parsed out of the share URL.
+// A TikTok video id — TikTok rows only. (Instagram and Threads ids are numbers too,
+// so a numeric id alone doesn't make a post a TikTok video.)
 function tiktokId(c) {
-  if (c.external_id && /^\d+$/.test(String(c.external_id))) return String(c.external_id);
-  const m = (c.post_url || '').match(/\/video\/(\d+)/);
-  return m ? m[1] : null;
+  const url = String(c.post_url || '');
+  const isTikTok = c.platform === 'tiktok' || /tiktok\.com\//.test(url);
+  if (!isTikTok) return null;
+  const m = url.match(/\/video\/(\d+)/);
+  if (m) return m[1];
+  return c.external_id && /^\d+$/.test(String(c.external_id)) ? String(c.external_id) : null;
+}
+const isMetaPost = (c) => /instagram\.com\/|threads\.(net|com)\//.test(String(c.post_url || ''));
+const canPlay = (c) => !!(tiktokId(c) || isMetaPost(c));
+// The right in-planner player for a post: TikTok's player, or Instagram / Threads embeds.
+function PostPlayer({ post, onClose }) {
+  return tiktokId(post) ? html`<${VideoModal} video=${post} onClose=${onClose} />` : html`<${IgPlayer} post=${post} onClose=${onClose} />`;
 }
 
 // Plays a TikTok video inline via the official embed player (loaded only on open).

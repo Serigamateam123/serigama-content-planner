@@ -13,9 +13,12 @@ import { ContentModal } from './features/ContentModal.js';
 import { Login } from './features/Login.js';
 import { Team } from './features/Team.js';
 import { Icon } from './components/ui.js';
-import { readKV, writeKV, updateKVEntry } from './lib/kv.js';
+import { readKV, readKVFresh, writeKV, updateKVEntry } from './lib/kv.js';
 import { findPlanMatches, applyPlanMatches, findTrialMatches, applyTrialMatches } from './lib/reconcile.js';
-import { initAccounts, setActiveAccount, accountOf, kvKey, kvBase, loadedAccounts, socialAccounts, accountColor } from './lib/account.js';
+import { initAccounts, setActiveAccount, accountOf, kvKey, kvBase, loadedAccounts, socialAccounts, accountColor, PLATFORM_SHORT } from './lib/account.js';
+
+// "@serigamahq · Threads": the platform is part of the label, since one handle can be on several platforms.
+const acctLabel = (a) => '@' + (a.handle || a.display_name) + (PLATFORM_SHORT[a.platform] ? ' · ' + PLATFORM_SHORT[a.platform] : '');
 
 const ROUTES = ['dashboard', 'calendar', 'fundamental', 'overview', 'targets', 'analytics', 'team'];
 // Pages each team role may open (supabase/team.sql enforces the data side).
@@ -185,7 +188,7 @@ function App() {
       const pairs = findPlanMatches(withStudio, accountOf);
       if (pairs.length) {
         try {
-          const nextMeta = await applyPlanMatches(pairs, readKV(META_KEY, {}), store);
+          const nextMeta = await applyPlanMatches(pairs, await readKVFresh(META_KEY, {}), store);
           await writeKV(META_KEY, nextMeta);
           const gone = new Set(pairs.map((p) => p.plan.id));
           const byPost = new Map(pairs.map((p) => [p.post.id, p]));
@@ -202,7 +205,7 @@ function App() {
       const tpairs = findTrialMatches(finalContents);
       if (tpairs.length) {
         try {
-          const nextMeta = await applyTrialMatches(tpairs, readKV(META_KEY, {}), store);
+          const nextMeta = await applyTrialMatches(tpairs, await readKVFresh(META_KEY, {}), store);
           await writeKV(META_KEY, nextMeta);
           const gone = new Set(tpairs.map((p) => p.plan.id));
           finalContents = finalContents.filter((c) => !gone.has(c.id)).map((c) => (nextMeta[c.id] && nextMeta[c.id].trial ? { ...c, ...nextMeta[c.id] } : c));
@@ -331,7 +334,7 @@ function App() {
   const calendarContents = allCalendar ? all.contents.filter((c) => socialIds.has(accountOf(c)) && !isReply(c)) : contents;
   const accountTag = (c) => {
     const a = accounts.find((x) => x.id === accountOf(c));
-    return a ? { id: a.id, label: '@' + (a.handle || a.display_name), color: accountColor(a.id, accounts) } : null;
+    return a ? { id: a.id, label: acctLabel(a), color: accountColor(a.id, accounts) } : null;
   };
 
   // Phone: the sidebar is a slide-out menu; picking anything in it closes it.
@@ -382,7 +385,7 @@ function App() {
               onNew=${() => openNew()} onOpen=${openEdit} onNavigate=${navigate} onRefresh=${loadData} />`
           : page === 'calendar'
           ? html`<${Calendar} contents=${calendarContents}
-              accounts=${allCalendar ? socialAccounts(accounts).map((a) => ({ id: a.id, label: '@' + (a.handle || a.display_name), color: accountColor(a.id, accounts) })) : null}
+              accounts=${allCalendar ? socialAccounts(accounts).map((a) => ({ id: a.id, label: acctLabel(a), color: accountColor(a.id, accounts) })) : null}
               accountTag=${allCalendar ? accountTag : null}
               scopeLabel=${allCalendar ? 'All accounts' : (() => { const a = accounts.find((x) => x.id === accountId); return a ? '@' + (a.handle || a.display_name) : ''; })()}
               onNew=${() => openNew()} onOpen=${openEdit} onNewOnDate=${(d) => openNew(d)} onReschedule=${rescheduleContent} />`

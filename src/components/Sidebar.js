@@ -1,6 +1,6 @@
 import { html } from '../lib/html.js';
 import { Icon } from './ui.js';
-import { socialAccounts, PLATFORM_NAME, accountColor } from '../lib/account.js';
+import { socialAccounts, PLATFORM_NAME, PLATFORM_SHORT, accountColor } from '../lib/account.js';
 import { startTikTokConnect, startInstagramConnect, startThreadsConnect } from '../features/TikTokConnect.js';
 
 const ADD = '__add_tiktok__';
@@ -53,7 +53,7 @@ export function Sidebar({ open = false, route, role = 'owner', locked = [], onNa
         ${social.map((a) => html`<button class=${'nav-item nav-sub' + (onCal && calScope !== 'all' && a.id === accountId ? ' active' : '')}
             onClick=${() => onCalendarScope(a.id)} title=${`@${a.handle || a.display_name} · ${PLATFORM_NAME[a.platform]}`}>
             <span class="acct-dots"><i style=${{ background: accountColor(a.id, accounts) }}></i></span>
-            <span>${a.handle || a.display_name}</span>
+            <span>${a.handle || a.display_name} <span class="muted" style=${{ fontSize: '11px' }}>${PLATFORM_SHORT[a.platform] || ''}</span></span>
           </button>`)}
       </div>`
     : null;
