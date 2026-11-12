@@ -380,6 +380,7 @@ function App() {
           defaultDate=${modal.defaultDate}
           prefill=${modal.prefill}
           contents=${contents}
+          allContents=${all.contents}
           accounts=${accounts}
           onSubmit=${saveContent}
           onDelete=${deleteContent}

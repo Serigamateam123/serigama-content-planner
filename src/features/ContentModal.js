@@ -19,7 +19,7 @@ const usedValues = (contents, key, extra = []) =>
 
 // Add / edit a piece of content. `content` is null when creating; `prefill` seeds a
 // new post (e.g. "Plan a post" from a Content Funnel inspo clip).
-export function ContentModal({ content, contents, accounts, defaultDate, prefill, onSubmit, onDelete, onClose }) {
+export function ContentModal({ content, contents, allContents, accounts, defaultDate, prefill, onSubmit, onDelete, onClose }) {
   const c = content || prefill || {};
   const [form, setForm] = useState({
     title: c.title || '',
@@ -51,6 +51,13 @@ export function ContentModal({ content, contents, accounts, defaultDate, prefill
 
   const submit = async () => {
     if (!form.title.trim()) { setErr('Give the post a title first.'); return; }
+    // A trial reel's link must be its own: if it's the link of a post Instagram already
+    // synced, saving would fold the trial into that post (lib/reconcile.js).
+    const code = (u) => { const m = String(u || '').match(/instagram\.com\/(?:[^/]+\/)?(?:reels?|p|tv)\/([A-Za-z0-9_-]+)/); return m ? m[1] : null; };
+    if (form.trial && !(content && content.external_id) && code(form.post_url)) {
+      const twin = (allContents || contents || []).find((x) => x.external_id && x.id !== (content && content.id) && code(x.post_url) === code(form.post_url));
+      if (twin) { setErr(`That link is your posted reel “${(twin.title || '').slice(0, 50)}”, not the trial reel. In the Instagram app, open the trial reel → ⋯ → Copy link, and paste that instead (or leave the link empty).`); return; }
+    }
     setBusy(true);
     setErr('');
     const scheduled_at = fromDatetimeLocal(form.scheduled_local);
