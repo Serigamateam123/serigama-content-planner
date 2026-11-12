@@ -199,7 +199,11 @@ export function Analytics({ contents, replies = [], accounts, accountStats, metr
       <${MonthlyReport} contents=${contents} />
     ` : ''}
 
-    ${isInstagram() ? html`<${InstagramSplit} posts=${a.published} />` : ''}
+    ${isInstagram() ? html`<${InstagramSplit} posts=${a.published} trials=${contents.filter((c) => {
+      if (!c.trial || c.platform !== 'instagram') return false;
+      const at = c.published_at || c.scheduled_at; const d = at ? dayKey(new Date(at)) : '';
+      return (!f.from || d >= f.from) && (!f.to || d <= f.to);
+    })} />` : ''}
     ${isThreads() ? html`<${ThreadsSplit} posts=${a.published} replies=${replies.filter((c) => {
       const d = c.published_at ? dayKey(new Date(c.published_at)) : '';
       return (!f.from || d >= f.from) && (!f.to || d <= f.to);
@@ -219,7 +223,7 @@ export function Analytics({ contents, replies = [], accounts, accountStats, metr
 const IG_FORMAT = { REEL: 'Reels', REELS: 'Reels', POST: 'Feed posts', FEED: 'Feed posts', CAROUSEL_CONTAINER: 'Carousels', CAROUSEL_ALBUM: 'Carousels', STORY: 'Stories', AD: 'Ads', IGTV: 'Videos', LIVE: 'Live' };
 const igFormatName = (k) => IG_FORMAT[String(k).toUpperCase()] || String(k).toLowerCase().replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 
-function InstagramSplit({ posts }) {
+function InstagramSplit({ posts, trials = [] }) {
   const [showAll, setShowAll] = useState({ feed: false, reels: false });
   const extras = readKV('serigama.reels', {}) || {};
   const monthly = (readKV('serigama.monthly', {}) || {}).months || {};
@@ -240,7 +244,7 @@ function InstagramSplit({ posts }) {
     <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z" fill="#fff"/></svg></button>`;
   const titleCell = (c) => html`<td class="atable-title" style=${{ minWidth: '220px' }}>
     <div style=${{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-      ${c.post_url ? playBtn(c) : ''}<span>${clip(c.title)}</span>
+      ${c.post_url ? playBtn(c) : ''}<span>${c.trial ? html`<span class="trial-tag">Trial reel</span> ` : ''}${clip(c.title)}</span>
     </div></td>`;
   const sum = (list, f) => list.reduce((n, c) => n + f(c), 0);
   const watchSec = (c) => { const ms = (extras[String(c.external_id)] || {}).ig_reels_avg_watch_time; return ms != null ? Math.round(num(ms) / 100) / 10 : null; };
@@ -275,7 +279,32 @@ function InstagramSplit({ posts }) {
   const feedRows = byViews(feed).slice(0, showAll.feed ? undefined : 10);
   const reelRows = byViews(reels).slice(0, showAll.reels ? undefined : 10);
 
+  // Trial reels: Instagram's API leaves them out until they're shared to followers, so
+  // until then they're planner items ticked "Trial reel" with numbers typed in by hand.
+  const trialRows = [...trials].sort((x, y) => views(y) - views(x));
+  const hasNums = (c) => !!c.metrics;
+  const trialSection = trials.length ? html`<div class="card card-pad section-gap" style=${{ borderLeft: '4px solid #dc2626' }}>
+      <div class="card-title"><span class="trial-tag">Trial reels</span> <span class="muted" style=${{ fontWeight: 400 }}>(${trials.length} in this range — shown to non-followers first)</span></div>
+      ${tiles(html`
+        ${tile('#dc2626', 'Trial reels', trials.length)}
+        ${tile('#6366f1', 'Views', compact(sum(trials.filter(hasNums), views)))}
+        ${tile('#ec4899', '❤️ Likes', compact(sum(trials.filter(hasNums), (c) => num(c.metrics.likes))))}
+        ${tile('#3b82f6', '💬 Comments', compact(sum(trials.filter(hasNums), (c) => num(c.metrics.comments))))}
+        ${tile('#22c55e', '🔁 Shares', compact(sum(trials.filter(hasNums), (c) => num(c.metrics.shares))))}
+        ${tile('#0f7a4d', '✅ Shared to followers', trials.filter((c) => c.external_id).length)}`)}
+      <div style=${{ overflowX: 'auto' }}><table class="atable">
+        <thead><tr><th>Reel</th><th>Date</th><th>Status</th><th>Views</th><th>Reach</th><th>Likes</th><th>Comments</th><th>Shares</th></tr></thead>
+        <tbody>${trialRows.map((c) => html`<tr>${titleCell(c)}<td>${day(c.published_at ? c : { published_at: c.scheduled_at })}</td>
+          <td>${c.external_id ? html`<span style=${{ color: '#0f7a4d', fontWeight: 600 }}>Shared to followers</span>` : html`<span style=${{ color: '#dc2626', fontWeight: 600 }}>Still a trial</span>`}</td>
+          ${hasNums(c) ? html`<td>${compact(views(c))}</td><td>${compact(num(c.metrics.reach))}</td><td>${compact(num(c.metrics.likes))}</td><td>${compact(num(c.metrics.comments))}</td><td>${compact(num(c.metrics.shares))}</td>`
+            : html`<td colspan="5" class="muted" style=${{ fontSize: '12px' }}>Numbers not typed in yet — Update numbers ↑</td>`}
+        </tr>`)}</tbody>
+      </table></div>
+      <p class="muted" style=${{ fontSize: '11px', margin: '8px 0 0' }}>Instagram doesn't send trial reels to the planner while they're trials, so their numbers are typed in from the Instagram app. Once a trial reel is shared to your followers, the daily sync takes over its numbers and it keeps this label.</p>
+    </div>` : '';
+
   return html`<div>
+    ${trialSection}
     <div class="card card-pad section-gap">
       <div class="card-title">📷 Feed posts <span class="muted" style=${{ fontWeight: 400 }}>(${feed.length} — photos & carousels in this range)</span></div>
       ${feed.length ? html`

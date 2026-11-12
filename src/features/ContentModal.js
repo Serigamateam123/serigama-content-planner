@@ -39,6 +39,7 @@ export function ContentModal({ content, contents, accounts, defaultDate, prefill
     cta: c.cta || '',
     inspo1: c.inspo1 || '',
     inspo2: c.inspo2 || '',
+    trial: !!c.trial,
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -75,6 +76,7 @@ export function ContentModal({ content, contents, accounts, defaultDate, prefill
       cta: form.cta.trim(),
       inspo1: inspoHref(form.inspo1) || form.inspo1.trim(),
       inspo2: inspoHref(form.inspo2) || form.inspo2.trim(),
+      trial: form.trial ? true : '',
     };
     try {
       await onSubmit(patch, content ? content.id : null);
@@ -207,6 +209,14 @@ export function ContentModal({ content, contents, accounts, defaultDate, prefill
         <input type="checkbox" checked=${form.has_final_caption} onChange=${set('has_final_caption')} />
         Final caption is ready
       </label>
+    </div>
+
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" checked=${form.trial} onChange=${set('trial')} />
+        <span><span class="trial-tag">Trial reel</span> Posted as an Instagram trial reel (shown to non-followers first)</span>
+      </label>
+      ${form.trial ? html`<div class="help">Instagram doesn't send trial reels to the planner until they're shared to your followers. Paste the reel's link below and type its numbers in Post Performance → Update numbers so it shows in the report.</div>` : ''}
     </div>
 
     <div class="field">

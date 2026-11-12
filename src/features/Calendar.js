@@ -100,7 +100,7 @@ export function Calendar({ contents, accounts = null, accountTag = null, scopeLa
     title=${canDrag(c) ? 'Drag to another day to reschedule' : ''}
     ...${dragProps(c)}
     onClick=${(e) => { e.stopPropagation(); onOpen(c); }}>
-    <div class="t">${c.title}</div>
+    <div class="t">${c.trial ? html`<span class="trial-tag">Trial reel</span> ` : ''}${c.title}</div>
     <div class="m">${time(c.scheduled_at)} · ${tagEl(c) || _platformShort(c.platform)}${c.status !== 'scheduled' ? html` · <span class=${'st st-' + c.status}>${_statusShort(c.status)}</span>` : ''}</div>
   </div>`;
 
@@ -168,7 +168,7 @@ export function Calendar({ contents, accounts = null, accountTag = null, scopeLa
           <div class="backlog-strip">
             ${backlog.map(
               (c) => html`<div class=${'chip' + (c.id === dragId ? ' dragging' : '')} style=${{ borderLeftColor: funnelColor(c.funnel_stage) }} ...${dragProps(c)} onClick=${() => onOpen(c)}>
-                <div class="chip-title">${c.title}</div>
+                <div class="chip-title">${c.trial ? html`<span class="trial-tag">Trial reel</span> ` : ''}${c.title}</div>
                 <div class="chip-meta"><${Badge} status=${c.status} /> ${tagEl(c) || html`<${Platform} id=${c.platform} />`}</div>
               </div>`
             )}

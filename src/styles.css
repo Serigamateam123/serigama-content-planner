@@ -618,3 +618,6 @@ button { font-family: inherit; }
   .no-access { margin-top: 6vh; padding: 24px 18px; }
   .login-card { padding: 24px 20px; }
 }
+
+/* --- Trial reel label (Instagram trial reels) ---------------------------- */
+.trial-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; line-height: 1.5; vertical-align: 1px; white-space: nowrap; }

@@ -14,7 +14,7 @@ import { Login } from './features/Login.js';
 import { Team } from './features/Team.js';
 import { Icon } from './components/ui.js';
 import { readKV, writeKV, updateKVEntry } from './lib/kv.js';
-import { findPlanMatches, applyPlanMatches } from './lib/reconcile.js';
+import { findPlanMatches, applyPlanMatches, findTrialMatches, applyTrialMatches } from './lib/reconcile.js';
 import { initAccounts, setActiveAccount, accountOf, kvKey, kvBase, loadedAccounts, socialAccounts, accountColor } from './lib/account.js';
 
 const ROUTES = ['dashboard', 'calendar', 'fundamental', 'overview', 'targets', 'analytics', 'team'];
@@ -25,7 +25,7 @@ const ROLE_ROUTES = { calendar: ['calendar'] };
 // content id -> fields) rather than as columns, so they work without a database
 // migration. Merged onto each content on load; split back out on save.
 const META_KEY = 'serigama.contentmeta';
-const META_FIELDS = ['funnel_stage', 'pillar', 'product', 'assignee', 'hook', 'cta', 'inspo1', 'inspo2'];
+const META_FIELDS = ['funnel_stage', 'pillar', 'product', 'assignee', 'hook', 'cta', 'inspo1', 'inspo2', 'trial'];
 
 // Helper so a capture can be written straight to the cloud (and mirrored locally).
 // Used when refreshing the manually-pulled Studio figures. `set` takes the exact
@@ -191,6 +191,20 @@ function App() {
             : c));
           console.info(`[planner] ${pairs.length} planned item(s) replaced by their posted video`);
         } catch (e) { console.warn('[planner] could not merge plans into posted videos', e); }
+      }
+    }
+    // A trial reel typed in by hand, now synced from Instagram (shared to followers):
+    // keep the synced copy, carrying the "Trial reel" label across (lib/reconcile.js).
+    if (isCloud && ctx.role !== 'calendar') {
+      const tpairs = findTrialMatches(finalContents);
+      if (tpairs.length) {
+        try {
+          const nextMeta = await applyTrialMatches(tpairs, readKV(META_KEY, {}), store);
+          await writeKV(META_KEY, nextMeta);
+          const gone = new Set(tpairs.map((p) => p.plan.id));
+          finalContents = finalContents.filter((c) => !gone.has(c.id)).map((c) => (nextMeta[c.id] && nextMeta[c.id].trial ? { ...c, ...nextMeta[c.id] } : c));
+          console.info(`[planner] ${tpairs.length} trial reel(s) matched to their synced reel`);
+        } catch (e) { console.warn('[planner] could not match trial reels', e); }
       }
     }
     const moves = recentMoves.current;

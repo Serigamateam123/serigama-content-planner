@@ -14,7 +14,7 @@
 //   • a day apart: only when the titles clearly agree (similarity ≥ 0.5).
 
 export const PLAN_STATUSES = ['idea', 'draft', 'scripting', 'filming', 'editing', 'ready', 'scheduled'];
-export const PLAN_FIELDS = ['funnel_stage', 'pillar', 'product', 'assignee', 'hook', 'cta', 'inspo1', 'inspo2', 'notion_id'];
+export const PLAN_FIELDS = ['funnel_stage', 'pillar', 'product', 'assignee', 'hook', 'cta', 'inspo1', 'inspo2', 'trial', 'notion_id'];
 
 const MYT = 8 * 3600e3;
 const mytDay = (iso) => new Date(new Date(iso).getTime() + MYT).toISOString().slice(0, 10);
@@ -34,7 +34,8 @@ export function similarity(a, b) {
 export function findPlanMatches(contents, accountOf) {
   const linked = (c) => !!(c.plan_title || c.notion_id || c.hook || c.pillar);
   const posts = contents.filter((c) => c.external_id && c.status === 'published' && c.published_at && !linked(c));
-  const plans = contents.filter((c) => !c.external_id && PLAN_STATUSES.includes(c.status) && c.scheduled_at);
+  // Trial reels are left out: Instagram doesn't sync them, so a same-day feed post isn't theirs.
+  const plans = contents.filter((c) => !c.external_id && !c.trial && PLAN_STATUSES.includes(c.status) && c.scheduled_at);
   const pairs = [];
   const usedPost = new Set(), usedPlan = new Set();
   const candidates = [];
@@ -76,6 +77,30 @@ export async function applyPlanMatches(pairs, meta, store) {
     if (!post.caption && (plan.caption || plan.title)) patch.caption = ['Plan: ' + plan.title, plan.caption].filter(Boolean).join('\n\n');
     if (!post.campaign_id && plan.campaign_id) patch.campaign_id = plan.campaign_id;
     if (Object.keys(patch).length) await store.updateContent(post.id, patch);
+    await store.deleteContent(plan.id);
+    delete next[plan.id];
+  }
+  return next;
+}
+
+// Trial reels. Instagram's API leaves a trial reel out until it's shared to followers,
+// so meanwhile it lives as a hand-made item ticked "Trial reel" (with its link).
+// Once the sync brings in the same reel (same shortcode in the link), the hand-made
+// item is folded into the synced one — the label and plan fields move across — and
+// the hand-made item is removed, so the reel isn't counted twice.
+const igCode = (u) => { const m = String(u || '').match(/instagram\.com\/(?:[^/]+\/)?(?:reels?|p|tv)\/([A-Za-z0-9_-]+)/); return m ? m[1] : null; };
+export function findTrialMatches(contents) {
+  const synced = new Map();
+  for (const c of contents) if (c.external_id && c.platform === 'instagram' && igCode(c.post_url)) synced.set(igCode(c.post_url), c);
+  return contents.filter((c) => c.trial && !c.external_id && igCode(c.post_url) && synced.has(igCode(c.post_url)))
+    .map((plan) => ({ plan, post: synced.get(igCode(plan.post_url)) }));
+}
+export async function applyTrialMatches(pairs, meta, store) {
+  const next = { ...meta };
+  for (const { plan, post } of pairs) {
+    const fromPlan = {};
+    for (const f of PLAN_FIELDS) if (plan[f]) fromPlan[f] = plan[f];
+    next[post.id] = { ...fromPlan, ...Object.fromEntries(Object.entries(next[post.id] || {}).filter(([, v]) => v)), trial: true, plan_title: plan.title };
     await store.deleteContent(plan.id);
     delete next[plan.id];
   }
