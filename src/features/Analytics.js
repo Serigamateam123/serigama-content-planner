@@ -388,6 +388,8 @@ function IgPlayer({ post, onClose }) {
   const kind = m && m[1] === 'p' ? 'p' : 'reel';
   const src = th ? `https://www.threads.com/${th[1]}/post/${th[2]}/embed` : m ? `https://www.instagram.com/${kind}/${m[2]}/embed/` : null;
   const app = th ? 'Threads' : 'Instagram';
+  // Threads' embed prints its time in US Pacific time, so show the Malaysia time above it.
+  const myt = (iso) => new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -397,7 +399,10 @@ function IgPlayer({ post, onClose }) {
     style=${{ position: 'fixed', inset: 0, background: 'rgba(10,10,20,.72)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
     <div onClick=${(e) => e.stopPropagation()} style=${{ background: 'var(--surface, #fff)', borderRadius: '14px', overflow: 'hidden', width: 'min(420px, 100%)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.4)' }}>
       <div style=${{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px 8px 14px', borderBottom: '1px solid var(--border-2, #eee)' }}>
-        <span style=${{ flex: 1, fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>${(post.title || '').split('\n')[0]}</span>
+        <span style=${{ flex: 1, minWidth: 0 }}>
+          <span style=${{ display: 'block', fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>${(post.title || '').split('\n')[0]}</span>
+          ${post.published_at ? html`<span class="muted" style=${{ display: 'block', fontSize: '11px' }}>Posted ${myt(post.published_at)} (Malaysia time)${th ? html`<br />The time inside the post is US time (16 h behind)` : ''}</span>` : ''}
+        </span>
         <a href=${post.post_url} target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style=${{ whiteSpace: 'nowrap' }}>Open in ${app} ↗</a>
         <button type="button" class="btn btn-ghost btn-sm" onClick=${onClose} aria-label="Close" style=${{ fontSize: '16px', lineHeight: 1 }}>✕</button>
       </div>
