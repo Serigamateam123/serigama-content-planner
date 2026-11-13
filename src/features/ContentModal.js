@@ -173,7 +173,7 @@ export function ContentModal({ content, contents, allContents, accounts, default
     </div>`;
   };
 
-  const when = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '');
+  const when = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }) : '');
   const jobLine = () => {
     if (!job) return '';
     const story = !job.also_story ? '' : job.story_status === 'published' ? ' · Story ✓'

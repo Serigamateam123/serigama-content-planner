@@ -389,7 +389,7 @@ function IgPlayer({ post, onClose }) {
   const src = th ? `https://www.threads.com/${th[1]}/post/${th[2]}/embed` : m ? `https://www.instagram.com/${kind}/${m[2]}/embed/` : null;
   const app = th ? 'Threads' : 'Instagram';
   // Threads' embed prints its time in US Pacific time, so show the Malaysia time above it.
-  const myt = (iso) => new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+  const myt = (iso) => new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }).replace(/am$/, 'AM').replace(/pm$/, 'PM');
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);

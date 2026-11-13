@@ -110,5 +110,7 @@ export function shortDate(d) {
 export function time(d) {
   const x = parse(d);
   if (!x) return '';
-  return `${PAD(x.getHours())}:${PAD(x.getMinutes())}`;
+  // 12-hour with AM/PM ("10:30 PM"), the way the team reads times.
+  const h = x.getHours();
+  return `${h % 12 || 12}:${PAD(x.getMinutes())} ${h < 12 ? 'AM' : 'PM'}`;
 }
