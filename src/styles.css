@@ -641,3 +641,24 @@ button { font-family: inherit; }
 .ap-bad { background: #fee2e2; color: #991b1b; }
 .st-pill.ap-pill { background: #ede9fe; color: #5b21b6; }
 .st-pill.ap-pill-bad { background: #dc2626; color: #fff; }
+
+/* --- Threads replies on the calendar + Threads guide page ------------------ */
+.reply-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; background: #dc2626; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; line-height: 1.5; vertical-align: 1px; white-space: nowrap; }
+.tg-lead { border-left: 4px solid var(--blue-1); font-size: 13.5px; line-height: 1.6; }
+.tg-list { margin: 8px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.65; }
+.tg-list li { margin-bottom: 4px; }
+.tg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-top: 12px; }
+.tg-ex { display: flex; gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: #fbfbfe; }
+.tg-shot { flex: 0 0 120px; padding: 0; border: 0; background: none; cursor: zoom-in; align-self: flex-start; }
+.tg-shot img { width: 120px; border-radius: 8px; display: block; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+.tg-ex-body { min-width: 0; font-size: 12.5px; line-height: 1.55; }
+.tg-ex-body p { margin: 6px 0 0; }
+.tg-num { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.tg-ex-title { font-weight: 700; font-size: 13.5px; margin-top: 2px; }
+.tg-numbers { color: #1e40af; font-weight: 600; }
+.tg-copy { background: #ecfdf5; border-radius: 6px; padding: 6px 8px; color: #065f46; }
+.tg-zoom { align-items: center; padding: 16px; }
+.tg-zoom img { max-height: 92vh; max-width: 100%; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.tg-zoom-x { position: fixed; top: 14px; right: 14px; background: #fff; }
+@media (max-width: 560px) { .tg-shot { flex-basis: 96px; } .tg-shot img { width: 96px; } }
+.tg .atable th, .tg .atable td { text-align: left; vertical-align: top; white-space: normal; }

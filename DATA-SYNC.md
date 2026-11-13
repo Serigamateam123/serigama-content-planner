@@ -163,6 +163,9 @@ key is no longer read.
 - Same Meta app, use case **Access the Threads API** (own Threads app ID 1447493470865177;
   read-only `threads_basic` + `threads_manage_insights` + `threads_read_replies`). Redirect / uninstall / delete callback
   URLs point at `threads-callback`. @serigamahq is a **Threads Tester** (app in development mode).
+- **Calendar + guide** (2026-11-13): replies also show on the Content Calendar with a red "Reply" label. The
+  "📘 Threads guide" button (Threads calendar / All accounts) opens #/threads-guide (src/features/ThreadsGuide.js),
+  with example screenshots in public/guide/threads/ (ID / licence photos blurred).
 - **Replies** (since 2026-11-12): threads-sync also pulls `me/replies` (the account's replies on other people's threads), saves them as contents with `format: 'reply'` (kept out of the calendar and post counts) and shows them in their own "Replies" section in Post Performance, with views/likes/replies/reposts/quotes/shares each.
 - Supabase secret `THREADS_APP_SECRET` (copy it only after clicking **Show** on Meta — the masked
   ●●●● value fails with "Invalid client_secret"). `threads-callback` and `threads-sync` have

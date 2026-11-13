@@ -12,6 +12,7 @@ import { Targets } from './features/Targets.js';
 import { ContentModal } from './features/ContentModal.js';
 import { Login } from './features/Login.js';
 import { Team } from './features/Team.js';
+import { ThreadsGuide } from './features/ThreadsGuide.js';
 import { Icon } from './components/ui.js';
 import { readKV, readKVFresh, writeKV, updateKVEntry } from './lib/kv.js';
 import { findPlanMatches, applyPlanMatches, findTrialMatches, applyTrialMatches } from './lib/reconcile.js';
@@ -20,9 +21,9 @@ import { initAccounts, setActiveAccount, accountOf, kvKey, kvBase, loadedAccount
 // "@serigamahq · Threads": the platform is part of the label, since one handle can be on several platforms.
 const acctLabel = (a) => '@' + (a.handle || a.display_name) + (PLATFORM_SHORT[a.platform] ? ' · ' + PLATFORM_SHORT[a.platform] : '');
 
-const ROUTES = ['dashboard', 'calendar', 'fundamental', 'overview', 'targets', 'analytics', 'team'];
+const ROUTES = ['dashboard', 'calendar', 'fundamental', 'overview', 'targets', 'analytics', 'team', 'threads-guide'];
 // Pages each team role may open (supabase/team.sql enforces the data side).
-const ROLE_ROUTES = { calendar: ['calendar'] };
+const ROLE_ROUTES = { calendar: ['calendar', 'threads-guide'] };
 
 // Planning fields kept per post in app_kv (key `serigama.contentmeta`, map of
 // content id -> fields) rather than as columns, so they work without a database
@@ -331,7 +332,11 @@ function App() {
   };
   const socialIds = new Set(socialAccounts(accounts).map((a) => a.id));
   const allCalendar = calScope === 'all' && socialIds.size > 1;
-  const calendarContents = allCalendar ? all.contents.filter((c) => socialIds.has(accountOf(c)) && !isReply(c)) : contents;
+  // Threads replies show on the calendar too (red "Reply" label), so all activity is in one place.
+  const calendarContents = allCalendar ? all.contents.filter((c) => socialIds.has(accountOf(c))) : [...contents, ...replies];
+  // The Threads guide button shows on the Threads calendar and on All accounts (when a Threads account exists).
+  const hasThreads = accounts.some((a) => a.platform === 'threads');
+  const showGuide = hasThreads && (allCalendar || (accounts.find((x) => x.id === accountId) || {}).platform === 'threads');
   const accountTag = (c) => {
     const a = accounts.find((x) => x.id === accountOf(c));
     return a ? { id: a.id, label: acctLabel(a), color: accountColor(a.id, accounts) } : null;
@@ -388,7 +393,10 @@ function App() {
               accounts=${allCalendar ? socialAccounts(accounts).map((a) => ({ id: a.id, label: acctLabel(a), color: accountColor(a.id, accounts) })) : null}
               accountTag=${allCalendar ? accountTag : null}
               scopeLabel=${allCalendar ? 'All accounts' : (() => { const a = accounts.find((x) => x.id === accountId); return a ? '@' + (a.handle || a.display_name) : ''; })()}
-              onNew=${() => openNew()} onOpen=${openEdit} onNewOnDate=${(d) => openNew(d)} onReschedule=${rescheduleContent} />`
+              onNew=${() => openNew()} onOpen=${openEdit} onNewOnDate=${(d) => openNew(d)} onReschedule=${rescheduleContent}
+              onGuide=${showGuide ? () => navigate('threads-guide') : null} />`
+          : page === 'threads-guide'
+          ? html`<${ThreadsGuide} onBack=${() => navigate('calendar')} />`
           : page === 'fundamental'
           ? html`<${Fundamental} contents=${contents} dataVersion=${dataVersion} onPlan=${(prefill) => openNew(null, prefill)} />`
           : page === 'overview'
@@ -423,7 +431,7 @@ function App() {
 // Small dialog to set/change the account password (works because the user is
 // already signed in — no email is sent, so it never hits the email rate limit).
 // Shown in place of a page this login's role can't open (supabase/team.sql).
-const PAGE_NAMES = { dashboard: 'Content Dashboard', calendar: 'Content Calendar', fundamental: 'Content Funnel', overview: 'Monthly Report', analytics: 'Post Performance', targets: 'Targets', team: 'Team' };
+const PAGE_NAMES = { dashboard: 'Content Dashboard', calendar: 'Content Calendar', fundamental: 'Content Funnel', overview: 'Monthly Report', analytics: 'Post Performance', targets: 'Targets', team: 'Team', 'threads-guide': 'Threads guide' };
 function NoAccess({ page, role, canCalendar, onCalendar }) {
   const name = PAGE_NAMES[page] || 'this page';
   return html`<div class="card no-access">

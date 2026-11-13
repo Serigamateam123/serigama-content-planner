@@ -11,7 +11,7 @@ const DEFAULT_HOUR = 10; // time given to a backlog post dropped onto a day
 
 // accounts / accountTag are set only in the "All accounts" view: each post then
 // shows which account it belongs to, and there's an account filter + legend.
-export function Calendar({ contents, accounts = null, accountTag = null, scopeLabel = '', onNew, onOpen, onNewOnDate, onReschedule }) {
+export function Calendar({ contents, accounts = null, accountTag = null, scopeLabel = '', onNew, onOpen, onNewOnDate, onReschedule, onGuide = null }) {
   const [acctFilter, setAcctFilter] = useState('all');
   if (accounts && acctFilter !== 'all') contents = contents.filter((c) => { const t = accountTag && accountTag(c); return t && t.id === acctFilter; });
   const tagEl = (c) => { const t = accountTag && accountTag(c); return t ? html`<span class="cal-acct" style=${{ color: t.color }}><i style=${{ background: t.color }}></i>${t.label}</span>` : null; };
@@ -101,7 +101,7 @@ export function Calendar({ contents, accounts = null, accountTag = null, scopeLa
     title=${canDrag(c) ? 'Drag to another day to reschedule' : ''}
     ...${dragProps(c)}
     onClick=${(e) => { e.stopPropagation(); onOpen(c); }}>
-    <div class="t">${c.trial ? html`<span class="trial-tag">Trial reel</span> ` : ''}${c.title}</div>
+    <div class="t">${c.format === 'reply' ? html`<span class="reply-tag">Reply</span> ` : ''}${c.trial ? html`<span class="trial-tag">Trial reel</span> ` : ''}${c.title}</div>
     <div class="m">${time(c.scheduled_at)} · ${tagEl(c) || _platformShort(c.platform)}${c.status ? html` <span class=${'st-pill st-' + c.status}>${_statusShort(c.status)}</span>` : ''}${_jobPill(c.publishJob)}</div>
   </div>`;
 
@@ -112,6 +112,7 @@ export function Calendar({ contents, accounts = null, accountTag = null, scopeLa
         <h1 class="page-title">Content Calendar${scopeLabel ? html` <span class="muted" style=${{ fontWeight: 500, fontSize: '0.6em' }}>· ${scopeLabel}</span>` : ''}</h1>
       </div>
       <div class="page-actions">
+        ${onGuide ? html`<button class="btn" onClick=${onGuide} title="How to be active on Threads, with examples">📘 Threads guide</button>` : ''}
         <button class="btn btn-gold" onClick=${onNew}><${Icon} name="plus" size=${15} /> Add content</button>
       </div>
     </div>
