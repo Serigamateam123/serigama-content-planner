@@ -24,7 +24,8 @@ export function ContentModal({ content, contents, allContents, accounts, default
   const c = content || prefill || {};
   const [form, setForm] = useState({
     title: c.title || '',
-    platform: c.platform || (PLATFORMS[0] && PLATFORMS[0].id),
+    // New items start on the platform of the account they're for (Instagram account → Instagram).
+    platform: c.platform || ((accounts || []).find((a) => a.id === (c.account_id || activeAccountId())) || {}).platform || (PLATFORMS[0] && PLATFORMS[0].id),
     account_id: c.account_id || (content ? '' : activeAccountId() || ''), // new posts go to the account in the switcher
     format: c.format || 'feed',
     status: c.status || (defaultDate ? 'scheduled' : 'idea'),
@@ -47,6 +48,9 @@ export function ContentModal({ content, contents, allContents, accounts, default
   const jobLocked = !!job && (job.status === 'published' || job.status === 'processing');
   // Auto-post is for items not on Instagram yet (a synced post would be posted twice).
   const canAp = canAutopost && !(content && content.external_id && !job);
+  // Auto-post shows for Instagram items, and for any item on an Instagram account
+  // (some imported plans carry another platform); posting sets the platform to Instagram.
+  const igTarget = form.platform === 'instagram' || ((accounts || []).find((a) => a.id === form.account_id) || {}).platform === 'instagram';
   const [ap, setAp] = useState({
     on: !!job,
     file: null,
@@ -82,7 +86,7 @@ export function ContentModal({ content, contents, allContents, accounts, default
     }
     const scheduled_at = fromDatetimeLocal(form.scheduled_local);
     const acct = (accounts || []).find((a) => a.id === form.account_id);
-    const autopost = canAp && form.platform === 'instagram' && ap.on && !jobLocked;
+    const autopost = canAp && igTarget && ap.on && !jobLocked;
     let publish = null;
     if (autopost) {
       if (!acct || acct.platform !== 'instagram') { setErr('To post automatically, set Account to your Instagram account.'); return; }
@@ -112,7 +116,7 @@ export function ContentModal({ content, contents, allContents, accounts, default
     const prev = content || {};
     const patch = {
       title: form.title.trim(),
-      platform: form.platform,
+      platform: autopost ? 'instagram' : form.platform,
       account_id: form.account_id || null,
       format: form.format,
       status: form.status,
@@ -329,7 +333,7 @@ export function ContentModal({ content, contents, allContents, accounts, default
       ${form.trial ? html`<div class="help">Instagram syncs trial reels like normal reels, with their numbers, but doesn't say which ones are trials. So once the sync brings the reel in, open it in the calendar and tick this box. (Only add a trial reel by hand if it hasn't synced yet.)</div>` : ''}
     </div>
 
-    ${canAp && form.platform === 'instagram' ? autopostBox() : ''}
+    ${canAp && igTarget ? autopostBox() : ''}
 
     <div class="field">
       <label>Post link (once published)</label>
