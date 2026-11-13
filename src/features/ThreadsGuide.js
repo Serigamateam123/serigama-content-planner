@@ -76,17 +76,6 @@ export function ThreadsGuide({ onBack }) {
       Your planner already tracks every reply (Post Performance → @serigamahq · Threads → Replies) and shows them on the calendar in red.
     </div>
 
-    ${card('🗓️ Daily routine (30–45 minutes)', html`
-      <div style=${{ overflowX: 'auto' }}><table class="atable">
-        <thead><tr><th>When</th><th>What</th><th>How many</th></tr></thead>
-        <tbody>
-          <tr><td>Morning (9–10 AM)</td><td>Scroll “For you”, reply to trending / viral posts</td><td>5–8 replies</td></tr>
-          <tr><td>Lunch (12–2 PM)</td><td>Reply to other brands (Watsons, MYDIN, Zus, Kicap Jalen, Mamee)</td><td>3–5 replies</td></tr>
-          <tr><td>Night (8–11 PM, peak)</td><td>1 own post + answer everyone who replied to you</td><td>1 post + all replies</td></tr>
-        </tbody>
-      </table></div>
-      <p class="muted" style=${{ fontSize: '12.5px', margin: '8px 0 0' }}><strong>Weekly target:</strong> about 70 replies (10–15 a day) and 4–5 own posts. Replies grow the account; posts give people a reason to follow.</p>`)}
-
     ${card('🎯 Where to reply (best first)', html`<ol class="tg-list">
       <li><strong>Viral posts from ordinary people</strong> (1K+ likes) where a short funny line fits — health, family, food, makcik, wellness topics suit Serigama best.</li>
       <li><strong>Big Malaysian brands</strong> — join their banter (MYDIN, Watsons, Mamee are already doing it).</li>
@@ -94,7 +83,7 @@ export function ThreadsGuide({ onBack }) {
       <li><strong>Birthday / wedding / achievement posts</strong> — congratulate, MYDIN-style.</li>
     </ol>`)}
 
-    ${card('✍️ What to post (weekly mix)', html`
+    ${card('💡 Idea to post', html`
       <div style=${{ overflowX: 'auto' }}><table class="atable">
         <thead><tr><th>Type</th><th>Serigama example</th><th>Why it works</th></tr></thead>
         <tbody>
@@ -147,7 +136,7 @@ export function ThreadsGuide({ onBack }) {
       <li>Post Performance → @serigamahq · Threads → <strong>Replies</strong>: which replies got the most views, and under whose post? Do more of that.</li>
       <li>Did <strong>followers</strong> grow this week? (216 on 12 Nov.)</li>
       <li>Which of your <strong>own posts</strong> got the most replies?</li>
-      <li>Content Calendar: count the red <span class="reply-tag">Reply</span> cards this week — aim for ~70.</li>
+      <li>Content Calendar: look over the red <span class="reply-tag">Reply</span> cards this week — which days and topics you replied on.</li>
     </ul>`)}
 
     ${zoom ? html`<div class="overlay tg-zoom" onClick=${() => setZoom(null)} role="dialog" aria-modal="true" aria-label="Screenshot">
