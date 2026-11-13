@@ -38,14 +38,10 @@ const EXAMPLES = [
     what: '"Ingatkan kembar. Orang berbeza rupanya" under a viral look-alike post.',
     numbers: 'The original post: 15.9K likes · 550 replies',
     copy: 'Find viral posts (1K+ likes) where a short funny line fits naturally. Don\'t promote in these replies.' },
-  { n: 8, brand: 'MYDIN', title: 'Soft-sell with a personal touch',
-    what: '"Happy Birthday aaiman.jerrr 🎉 Jangan lupa tebus baucar RM5 dekat MYDIN Rewards tau" — the person answered "Free2 saya pergi ye 🤍".',
+  { n: 9, brand: 'MYDIN', title: 'Soft-sell with a personal touch — on every birthday post',
+    what: 'On the "same birthday" trend, MYDIN replied to post after post: "Happy Birthday aaiman.jerrr 🎉 Jangan lupa tebus baucar RM5 dekat MYDIN Rewards tau" — and the person answered back.',
     numbers: '141 likes and a real conversation with a customer',
-    copy: 'Birthdays, weddings, new babies, recoveries: congratulate warmly, mention Serigama only if it truly helps (e.g. a promo or tip).' },
-  { n: 9, brand: 'MYDIN', title: 'Show up on every birthday / trend post',
-    what: 'The same birthday trend — MYDIN replied on many of these posts, one after another.',
-    numbers: 'Same 1-minute reply, many audiences',
-    copy: 'When a trend repeats (birthdays, "korang team apa?"), reply on several of them — but write each reply differently.' },
+    copy: 'Birthdays, weddings, new babies, recoveries: congratulate warmly, mention Serigama only if it truly helps (a promo or tip). When a trend repeats, reply on several posts, but write each reply differently.' },
   { n: 10, brand: 'Watsons × Zus × Mamee Monster', title: 'Brands banter with each other',
     what: '"Hai kawan lama" (Mamee Monster) → "2 is better than 1 kannn @zus.coffee 😍" (Watsons) → Zus replies with a cat GIF.',
     numbers: 'Mamee Monster\'s reply: 1K likes',
@@ -117,12 +113,12 @@ export function ThreadsGuide({ onBack }) {
     <div class="card card-pad section-gap">
       <div class="card-title">📸 Examples from other brands <span class="muted" style=${{ fontWeight: 400 }}>(tap a screenshot to enlarge)</span></div>
       <div class="tg-grid">
-        ${EXAMPLES.map((e) => html`<div class="tg-ex">
-          <button class="tg-shot" onClick=${() => setZoom(e)} aria-label=${'Enlarge example ' + e.n}>
+        ${EXAMPLES.map((e, i) => html`<div class="tg-ex">
+          <button class="tg-shot" onClick=${() => setZoom(e)} aria-label=${'Enlarge example ' + (i + 1)}>
             <img src=${IMG(e.n)} alt=${e.brand + ': ' + e.title} loading="lazy" />
           </button>
           <div class="tg-ex-body">
-            <div class="tg-num">Example ${e.n} · ${e.brand}</div>
+            <div class="tg-num">Example ${i + 1} · ${e.brand}</div>
             <div class="tg-ex-title">${e.title}</div>
             <p><strong>What they did:</strong> ${e.what}</p>
             <p class="tg-numbers">📊 ${e.numbers}</p>
