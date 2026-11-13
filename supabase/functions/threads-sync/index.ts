@@ -149,6 +149,18 @@ async function syncOne(row: any) {
       const j = await graph(`${p.id}/insights?metric=views,likes,replies,reposts,quotes,shares`, token);
       for (const d of j.data || []) n[d.name] = Number(d.values?.[0]?.value ?? d.total_value?.value) || 0;
     } catch (_) { /* reposts of others' posts have no insights */ }
+    // The insights "replies" figure can stay 0 (checked 13 Nov: 3 replies with a visible
+    // reply showed 0), so also count the replies actually under the post and keep the higher.
+    try {
+      let count = 0, next = `${p.id}/replies?fields=id&limit=100`;
+      for (let page = 0; next && page < 5; page++) {
+        const j = await graph(next, token);
+        count += (j.data || []).length;
+        const after = j.paging?.cursors?.after;
+        next = j.paging?.next && after ? `${p.id}/replies?fields=id&limit=100&after=${after}` : "";
+      }
+      if (count > (n.replies || 0)) n.replies = count;
+    } catch (_) { /* replies list not available for this post */ }
     return { p, n };
   });
   for (let i = 0; i < withNums.length; i += 50) {
